@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef, createContext, useContext } from "react";
+import useTelemetry from './hooks/use_telemetry';
+import useDiagnostics from './hooks/use_diagnostics';
+import useSerial from './hooks/use_serial';
+import useCommand from './hooks/use_command';
 var MASCOT_SRC="data:image/png;base64,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";;
 var SAD_MASCOT_SRC="data:image/png;base64,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";
 var LOGO_SRC="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABoAAAAaCAYAAACpSkzOAAADC0lEQVR4nKXWS6jVVRQG8N+61/ftgoSFGZgpBKZW0KAizAKDLGzUwCgTclAQQYOaBEEgDRoUPSiiiaMGIQ2CaBCNgtCopg0ssaLMQshHvrt+Df775Ln3nnPuFdfk/9hrr2+tb3977V3maUnGe6/tWbhUVRky5cosSc0xPjafOHMGqapLSRbgQazGMlzEKXxdVT9dFVAfyK14Et/jtzbnHBZjM85W1Xs9/ysC6gPZgKfwQQt6A05jAcbwCW7HzVX19lxgg4AqyZIke5KsSvJKkkeTLOzzWZ/kjSQrk+xOsqWX5HxBxtpzawu+I8nWvvHxvvfJJK+2ZF4aBTToZ4/OtTiOVVX1ZZLXkmyuqqkkE0ne0a3TIazB+SQTw6gbVea/uA5Hm8RfxvZW0Y14HnfiR1zb/BcNC7ZgBNAlLNcpDHZgf1VN4WCSp7Ef97Y44zqhzBuot9N/bRn/XlVJsg/PJjmMW/BZVZ1MMtESOllVF5KMt2Sm2SzqmqwL32AS25Lc1Lj/XEfTgao6lGRSJ/tN+KLNG7hGw6irqjqdZKWOkt1JjuMMTmBDknt0XWIp1uF8q3zg3pz1s2+zvog/dcpbi2taYhcbeOEk/sIRPIy3qupIkprZbKdR1weyHYexD3/jw0bJPw2gsBAf44cG9D52tr44q4BpQA1kKZ7R7Y912IgVWKITyrd4V9f3NjTq7sAx3I0tLc54f+z/gfoGHmiZrsEeHNTJdgzf6dbpekzgfPv3BHbhzQbKZfViuhj6D7RF+KNVsk13JBzD+kbhpuY7hZ1YhbMur98sm8Zln2Ieb8CH8Qh+ab6L++acaQkd1YllP+7C3qo6PkgQQy3JmiTP9X0vSrIsyZIZfruS3D8q1sBel2Q8ycKq+hnLk2yEqrpQVWeq6lyv+iTr8SkeSrK6HTGzVDdww7YO3esQe/FCko9063AfDlbVV0ke06nyhI7KoZt2rjtDtYkrdcqawgHcpjttz1XV670Dsaoujoo30oa1lCQrZo6PujGNrGhGgGm+V3Q3uBqb67430/4D/MK0wfsvrdEAAAAASUVORK5CYII=";
@@ -47,123 +51,9 @@ function buildTimeline(roles) {
 }
 const ROLES = ["Apogee","Apogee Backup","Main","Main Backup","Ignition","Ignition Backup","Custom"];
 
-function useSim(conn, timeline, flightActive) {
-  const [d,setD] = useState({ rssi:-42,dataAge:0,batt:8.24,gpsLat:51.50741,gpsLon:-0.12784,gpsFix:"3D",gpsSats:0,ekfAlt:0,alt:0,vel:0,roll:0,pitch:90,yaw:0,mach:0,state:"PAD",t:0,apogee:0,stale:false,staleSince:0,qbar:0,integrity:100,
-    pyro:[{hwCh:1,role:"Apogee",cont:false,contV:0,armed:false,firing:false},{hwCh:2,role:"Main",cont:false,contV:0,armed:false,firing:false},{hwCh:3,role:"Apogee Backup",cont:false,contV:0,armed:false,firing:false},{hwCh:4,role:"Main Backup",cont:false,contV:0,armed:false,firing:false}]
-  });
-  const tick = useRef(0);
-  var ivRef = useRef(null);
-  var delayRef = useRef(null);
-  var staleRef = useRef({dropping:false,dropStart:0,dropDuration:0});
-  var tlRef = useRef(timeline);
-  var flightRef = useRef(flightActive);
-  tlRef.current = timeline;
-  flightRef.current = flightActive;
-
-  useEffect(function() {
-    if (!conn) return;
-    tick.current = 0;
-    staleRef.current = {dropping:false,dropStart:0,dropDuration:0};
-    // When GS connects, start sending pad-idle data immediately (no 10s delay for idle)
-    var iv = setInterval(function() {
-      // If flight not active, show pad-idle telemetry
-      if (!flightRef.current) {
-        setD(function(prev){return{...prev,
-          stale:false,staleSince:0,
-          rssi:-42-Math.random()*8,dataAge:Math.floor(Math.random()*60+15),
-          batt:8.24+Math.random()*0.03,
-          gpsSats:9+Math.floor(Math.random()*5),gpsFix:"3D",
-          gpsLat:51.50741+(Math.random()-0.5)*0.00002,gpsLon:-0.12784+(Math.random()-0.5)*0.00002,
-          ekfAlt:0.1+Math.random()*0.3,alt:0.1+Math.random()*0.3,vel:0,
-          roll:Math.random()*0.5-0.25,pitch:89.5+Math.random(),yaw:Math.random()*0.5-0.25,
-          mach:0,state:"PAD",t:0,apogee:0,qbar:0,integrity:98+Math.random()*2,
-          pyro:prev.pyro.map(function(p){return{...p,
-            cont:p.hwCh===4?false:Math.random()>0.05,
-            contV:p.hwCh===4?0.02+Math.random()*0.05:(Math.random()>0.05?2.8+Math.random()*0.4:0.02+Math.random()*0.05)
-          };})
-        };});
-        return;
-      }
-      // Flight active — run the full sim
-      tick.current++;
-      var t = tick.current;
-      var sr = staleRef.current;
-      // Simulate random data drops during flight
-      if (!sr.dropping && t > 50 && t < 130 && Math.random() < 0.02) {
-        sr.dropping = true; sr.dropStart = t; sr.dropDuration = 8 + Math.floor(Math.random() * 20);
-      }
-      if (sr.dropping) {
-        var elapsed = t - sr.dropStart;
-        if (elapsed >= sr.dropDuration) { sr.dropping = false; }
-        else {
-          // During drop: only increment staleSince, zero-order hold everything else
-          setD(function(prev) { return {...prev, stale:true, staleSince:prev.staleSince + 0.18, dataAge:999}; });
-          return;
-        }
-      }
-      var tl = tlRef.current;
-      var hasIgn = tl.includes("SUSTAIN");
-      var hasDrogue = tl.includes("DROGUE");
-      var hasTumble = tl.includes("TUMBLE");
-      var hasMainSt = tl.includes("MAIN");
-      var hasRecovery = tl.includes("RECOVERY");
-      var ph;
-      if (hasIgn) {
-        if(t<40)ph="PAD";else if(t<55)ph="BOOST";else if(t<65)ph="COAST 1";else if(t<78)ph="SUSTAIN";else if(t<95)ph="COAST 2";
-        else if(t<100)ph="APOGEE";else if(hasDrogue&&t<110)ph="DROGUE";else if(hasTumble&&t<110)ph="TUMBLE";
-        else if(hasRecovery&&t<140)ph="RECOVERY";else if(hasMainSt&&t<140)ph="MAIN";
-        else ph="LANDED";
-      } else {
-        if(t<40)ph="PAD";else if(t<62)ph="BOOST";else if(t<90)ph="COAST";
-        else if(t<95)ph="APOGEE";else if(hasDrogue&&t<105)ph="DROGUE";else if(hasTumble&&t<105)ph="TUMBLE";
-        else if(hasRecovery&&t<135)ph="RECOVERY";else if(hasMainSt&&t<135)ph="MAIN";
-        else ph="LANDED";
-      }
-      if(!tl.includes(ph)) ph=tl[tl.length-1];
-      var ft=Math.max(0,t-40), alt=0, vel=0;
-      if(ph==="BOOST"){alt=ft*ft*8;vel=ft*16;}
-      else if(ph==="COAST"||ph==="COAST 1"){var c=Math.min(hasIgn?t-55:t-62,28);alt=2000+c*(200-c*3);vel=Math.max(0,200-c*7);}
-      else if(ph==="SUSTAIN"){var c2=t-65;alt=3500+c2*c2*6;vel=c2*14+50;}
-      else if(ph==="COAST 2"){var c3=t-78;alt=5000+c3*(180-c3*4);vel=Math.max(0,180-c3*8);}
-      else if(ph==="APOGEE"){alt=hasIgn?7200:5150;vel=0;}
-      else if(ph==="DROGUE"||ph==="TUMBLE"){var dt=hasIgn?t-100:t-95;alt=Math.max(0,(hasIgn?7200:5150)-dt*25);vel=-12-Math.random()*3;}
-      else if(ph==="RECOVERY"||ph==="MAIN"){var dt2=hasIgn?t-110:t-105;alt=Math.max(0,(hasIgn?6900:4900)-dt2*30);vel=-6-Math.random()*2;}
-      else if(ph==="LANDED"){alt=0;vel=0;}
-      // Dynamic pressure: q = 0.5 * rho * v^2 (rho varies with altitude, simplified)
-      var rho = 1.225 * Math.exp(-alt / 8500); // exponential atmosphere model
-      var qbar = 0.5 * rho * vel * vel;
-      // Data integrity: simulated from 3-5 repeat packets with hamming/ECC
-      var baseIntegrity = 98 + Math.random() * 2;
-      var machPenalty = (Math.abs(vel / 343) > 0.7 && Math.abs(vel / 343) < 1.3) ? (15 + Math.random() * 10) : 0;
-      var rangePenalty = alt > 3000 ? (alt - 3000) / 500 : 0;
-      var noisy = Math.random() < 0.05 ? 8 + Math.random() * 12 : 0;
-      var integrity = Math.max(0, Math.min(100, baseIntegrity - machPenalty - rangePenalty - noisy));
-
-      setD(function(prev){return{...prev,stale:false,staleSince:0,qbar:qbar,integrity:integrity,rssi:-42-Math.random()*10,dataAge:Math.floor(Math.random()*80+12),batt:8.24-t*0.0008+Math.random()*0.03,gpsSats:9+Math.floor(Math.random()*5),gpsFix:"3D",
-        gpsLat:51.50741+(Math.random()-0.5)*0.00005,gpsLon:-0.12784+(Math.random()-0.5)*0.00005,
-        ekfAlt:Math.max(0,alt),alt:Math.max(0,alt),vel:vel,
-        roll:(ph==="BOOST"||ph==="SUSTAIN"||ph==="COAST"||ph==="COAST 1"||ph==="COAST 2")?Math.sin(t*0.28)*14:ph==="TUMBLE"?Math.sin(t*0.8)*45:Math.sin(t*0.05)*2,
-        pitch:ph==="BOOST"?85:ph==="SUSTAIN"?83:(ph==="COAST"||ph==="COAST 1"||ph==="COAST 2")?75:ph==="TUMBLE"?Math.sin(t*0.5)*40+45:(ph==="MAIN"||ph==="RECOVERY")?5:90,
-        yaw:(ph==="BOOST"||ph==="SUSTAIN"||ph==="COAST"||ph==="COAST 1"||ph==="COAST 2")?Math.cos(t*0.18)*5:ph==="TUMBLE"?Math.sin(t*0.6)*30:Math.random()*2,
-        mach:vel/343,state:ph,t:t*100,apogee:(ph==="MAIN"||ph==="RECOVERY"||ph==="DROGUE"||ph==="TUMBLE"||ph==="LANDED")?(hasIgn?7200:5150):0,
-        pyro:prev.pyro.map(function(p){return{...p,cont:p.firing?false:(p.hwCh===4?false:Math.random()>0.08),contV:p.firing?0.01:(p.hwCh===4?0.02+Math.random()*0.05:(Math.random()>0.08?2.8+Math.random()*0.4:0.02+Math.random()*0.05))};})
-      };});
-    }, 180);
-    ivRef.current = iv;
-    return function(){clearInterval(ivRef.current);};
-  },[conn]);
-  var toggleArm = function(i){setD(function(p){return{...p,pyro:p.pyro.map(function(c,j){return j===i?{...c,armed:!c.armed}:c;})};});};
-  var firePyro = function(i){setD(function(p){return{...p,pyro:p.pyro.map(function(c,j){return j===i?{...c,firing:true}:c;})};});setTimeout(function(){setD(function(p){return{...p,pyro:p.pyro.map(function(c,j){return j===i?{...c,firing:false,cont:false,contV:0.01}:c;})};});},1200);};
-  var setRole = function(i,role){setD(function(p){return{...p,pyro:p.pyro.map(function(c,j){return j===i?{...c,role:role}:c;})};});};
-  return{...d,toggleArm:toggleArm,firePyro:firePyro,setRole:setRole,_tlRef:tlRef};
-}
-
-function useDiag(conn, alwaysPass) {
-  var [tests,setTests] = useState([{id:"imu",label:"IMU (LSM6DSO32)",detail:"833Hz",status:"idle"},{id:"mag",label:"Magnetometer",detail:"10Hz",status:"idle"},{id:"baro",label:"Barometer",detail:"50Hz",status:"idle"},{id:"ekf",label:"EKF Init",detail:"4-state",status:"idle"},{id:"att",label:"Attitude",detail:"Comp filter",status:"idle"},{id:"flash",label:"Flash",detail:"Memory",status:"idle"},{id:"cfg",label:"Config",detail:"Hash",status:"idle"}]);
-  var runAll = function(){if(!conn)return;setTests(function(p){return p.map(function(t){return{...t,status:"idle"};});});var i=0;var go=function(){if(i>=7)return;setTests(function(p){return p.map(function(t,j){return j===i?{...t,status:"running"}:t;});});setTimeout(function(){setTests(function(p){return p.map(function(t,j){return j===i?{...t,status:alwaysPass?"pass":(Math.random()>0.1?"pass":"fail")}:t;});});i++;go();},300+Math.random()*400);};go();};
-  var reset = function(){setTests(function(p){return p.map(function(t){return{...t,status:"idle"};});});};
-  return{tests:tests,runAll:runAll,reset:reset};
-}
+/* useSim and useDiag simulation hooks removed -- replaced by imported hooks:
+   useTelemetry (from ./hooks/use_telemetry)
+   useDiagnostics (from ./hooks/use_diagnostics) */
 
 function Graph(props) {
   var data=props.data, color=props.color, h=props.h||130, unit=props.unit, stale=props.stale;
@@ -968,7 +858,7 @@ function RoleConfig(props) {
 }
 
 function DiagTab(props) {
-  var T=useTheme(), conn=props.conn, alwaysPass=props.alwaysPass, diag=useDiag(conn, alwaysPass);
+  var T=useTheme(), conn=props.conn, diag=useDiagnostics();
   var pass=diag.tests.filter(function(t){return t.status==="pass";}).length;
   var fail=diag.tests.filter(function(t){return t.status==="fail";}).length;
   var total=diag.tests.length;
@@ -997,18 +887,18 @@ export default function CasperMC() {
   var [mode,setMode] = useState("dark");
   var T = themes[mode];
   var [tab,setTab] = useState("setup");
+  var serial = useSerial();
+  var cac = useCommand();
   var [fcConn,setFcConn] = useState(false); // USB to flight computer (setup only)
-  var [gsConn,setGsConn] = useState(false); // GS connected to MC (radio link)
+  var gsConn = serial.gs_connected; // GS connection state from serial hook
   var [flightActive,setFlightActive] = useState(false); // True after terminal count
   var [checklistOpen,setChecklistOpen] = useState(false); // Expandable checklist overlay
   var [padPos,setPadPos] = useState({lat:51.50741,lon:-0.12784});
   var [imperial,setImperial] = useState(true);
-  var defaultTL = buildTimeline(["Apogee","Main","Apogee Backup","Main Backup"]);
-  // Sim gets flightActive — before terminal count it shows pad-idle data, after it runs the flight
-  var sim = useSim(gsConn, defaultTL, flightActive);
+  // Real telemetry hook — subscribes to IPC bridge directly (no parameters needed)
+  var sim = useTelemetry();
   var usedRoles=sim.pyro.map(function(p){return p.role;});
   var timeline = buildTimeline(usedRoles);
-  sim._tlRef && (sim._tlRef.current = timeline);
   var [altH,setAltH] = useState([]);
   var [velH,setVelH] = useState([]);
   var [qbarH,setQbarH] = useState([]);
@@ -1139,7 +1029,7 @@ export default function CasperMC() {
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <button onClick={function(){setMode(function(m){return m==="dark"?"light":"dark";});}} style={{fontFamily:MONO,fontSize:10,padding:"4px 10px",borderRadius:3,border:"1px solid "+T.border,background:T.bgPanel,color:T.text,cursor:"pointer",fontWeight:600}}>{mode==="dark"?"☀":"●"}</button>
             <button onClick={function(){setImperial(!imperial);}} style={{fontFamily:MONO,fontSize:10,padding:"4px 10px",borderRadius:3,border:"1px solid "+T.border,background:T.bgPanel,color:T.accent,cursor:"pointer",fontWeight:700}}>{imperial?"FT":"M"}</button>
-            <Btn primary onClick={function(){setGsConn(!gsConn);if(gsConn){setFlightActive(false);setAltH([]);setVelH([]);setQbarH([]);setIntH([]);}}}>{gsConn?"GS DISCONNECT":"GS CONNECT"}</Btn>
+            <Btn primary onClick={function(){if(gsConn){serial.disconnect_gs();setFlightActive(false);setAltH([]);setVelH([]);setQbarH([]);setIntH([]);}else{serial.scan();serial.connect_gs();}}}>{gsConn?"GS DISCONNECT":"GS CONNECT"}</Btn>
           </div>
         </div>
 
@@ -1177,7 +1067,7 @@ export default function CasperMC() {
                     <Btn>DEFAULTS</Btn><Btn>EXPORT</Btn><Btn primary disabled={!fcConn} onClick={handleUpload}>{uploadDone?"✓ UPLOADED":"▲ UPLOAD TO FC"}</Btn>
                   </div>
                 </div>
-                <DiagTab conn={fcConn} alwaysPass={true}/>
+                <DiagTab conn={fcConn}/>
                 <div style={{marginTop:20}}>
                   <div style={{fontFamily:COND,fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Pyro Channel Configuration</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>

@@ -2,17 +2,26 @@
   "name": "casper-mc",
   "private": true,
   "version": "0.1.0",
+  "main": "./out/main/index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "unset ELECTRON_RUN_AS_NODE && electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "unset ELECTRON_RUN_AS_NODE && electron-vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "serialport": "^12.0.0"
   },
   "devDependencies": {
+    "@types/node": "^20.14.0",
     "@vitejs/plugin-react": "^4.2.0",
-    "vite": "^5.0.0"
+    "electron": "^33.4.11",
+    "electron-builder": "^24.0.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0"
   }
 }
