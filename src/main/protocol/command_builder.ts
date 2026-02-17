@@ -13,8 +13,11 @@
 import {
   MSG_ID_CMD_ARM,
   MSG_ID_CMD_FIRE,
+  MSG_ID_CMD_TESTMODE,
   MSG_ID_CONFIRM,
   MSG_ID_ABORT,
+  MSG_ID_HANDSHAKE,
+  MSG_ID_SIM_FLIGHT,
   MAGIC_1,
   MAGIC_2,
   SIZE_CMD_ARM,
@@ -189,6 +192,60 @@ export function build_abort(nonce: number): Uint8Array {
   write_u32_le(buf, 5, crc);
 
   return buf;
+}
+
+// ---------------------------------------------------------------------------
+// Handshake and simulated flight builders
+// ---------------------------------------------------------------------------
+
+/**
+ * Build HANDSHAKE request packet (1 byte).
+ *
+ * Layout:
+ *   [0]  msg_id (0xC0)
+ *
+ * Simple single-byte message. The transport layer handles COBS encoding.
+ *
+ * @returns 1-byte handshake request.
+ */
+export function build_handshake(): Uint8Array {
+  return new Uint8Array([MSG_ID_HANDSHAKE]);
+}
+
+/**
+ * Build SIM_FLIGHT command packet (5 bytes).
+ *
+ * Layout:
+ *   [0]    msg_id (0xD0)
+ *   [1-4]  CRC-32 (u32, LE)
+ *
+ * @returns 5-byte simulated flight command.
+ */
+export function build_sim_flight(): Uint8Array {
+  const buf = new Uint8Array(5); // msg_id + CRC32
+  buf[0] = MSG_ID_SIM_FLIGHT;
+  const crc = crc32_compute(buf.subarray(0, 1));
+  buf[1] = crc & 0xFF;
+  buf[2] = (crc >>> 8) & 0xFF;
+  buf[3] = (crc >>> 16) & 0xFF;
+  buf[4] = (crc >>> 24) & 0xFF;
+  return buf;
+}
+
+/**
+ * Build CMD_TESTMODE toggle packet (1 byte).
+ *
+ * Layout:
+ *   [0]  msg_id (0x82)
+ *
+ * The FC treats this as a toggle: if test mode is off it turns on,
+ * if on it turns off. Only accepted in PAD FSM state. Test mode
+ * auto-expires after 60 seconds on the FC side.
+ *
+ * @returns 1-byte test mode toggle command.
+ */
+export function build_testmode(): Uint8Array {
+  return new Uint8Array([MSG_ID_CMD_TESTMODE]);
 }
 
 /**

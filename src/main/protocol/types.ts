@@ -292,6 +292,17 @@ export interface AckConfig {
   crc_ok: boolean;
 }
 
+/** Handshake response from FC (msg_id 0xC0). */
+export interface HandshakeResponse {
+  msg_id: number;
+  /** Protocol version supported by the FC. */
+  protocol_version: number;
+  /** Firmware version string reported by the FC. */
+  fw_version: string;
+  /** True if CRC verified OK. */
+  crc_ok: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Discriminated union of all parsed message types
 // ---------------------------------------------------------------------------
@@ -311,6 +322,7 @@ export type ParsedMessage =
   | { type: 'ack_config'; data: AckConfig }
   | { type: 'nack'; data: Nack }
   | { type: 'confirm'; data: { nonce: number; crc_ok: boolean } }
+  | { type: 'handshake'; data: HandshakeResponse }
   | { type: 'unknown'; msg_id: number; raw: Uint8Array };
 
 /** Result of parsing a raw packet. */

@@ -4,39 +4,36 @@
  * Decodes the FC_ATT_QPACKED format (5 bytes = 40 bits) into a
  * full [w, x, y, z] unit quaternion.
  *
- * Encoding (PRD Section 4.3):
- *   Bits 39:38 = index of the dropped (largest) component (0=w, 1=x, 2=y, 3=z)
- *   Bits 37:36 = reserved
- *   Bits 35:24 = int12 component A (signed 12-bit)
- *   Bits 23:12 = int12 component B (signed 12-bit)
- *   Bits 11:0  = int12 component C (signed 12-bit)
+ * Byte layout is LITTLE-ENDIAN (byte 0 = LSB, byte 4 = MSB):
+ *   Byte 0:  C[7:0]
+ *   Byte 1:  B[3:0] | C[11:8]
+ *   Byte 2:  B[11:4]
+ *   Byte 3:  A[7:0]
+ *   Byte 4:  drop[1:0] | rsvd[1:0] | A[11:8]
  *
- * Each non-dropped component lies in the range [-1/sqrt(2), +1/sqrt(2)]
- * (since the dropped component is the largest). The 12-bit signed integer
- * maps this range: component = raw_int12 / QUAT_SCALE, where QUAT_SCALE
- * maps the maximum magnitude 1/sqrt(2) to the 12-bit signed max (2047).
+ * Each non-dropped component is a signed 12-bit integer scaled by
+ * QUAT_SCALE = 4096.0 (component = raw_int12 / 4096).
  *
- * QUAT_SCALE = 2047 * sqrt(2) ~ 2895.27, so:
- *   encode: raw = round(component * QUAT_SCALE)
- *   decode: component = raw / QUAT_SCALE
+ * The dropped component is the one with the largest absolute value.
+ * It is reconstructed as sqrt(1 - a^2 - b^2 - c^2), always positive
+ * (the encoder negates the entire quaternion if needed so the dropped
+ * component is positive).
  *
- * The dropped component is reconstructed as sqrt(1 - a^2 - b^2 - c^2),
- * always positive. Components A, B, C map to non-dropped indices in
- * ascending order.
+ * See ORIENTATION_SPEC.md §5 for the authoritative encoding reference.
  *
  * @module protocol/quaternion
  */
 
 /**
  * Scale factor for smallest-three quaternion encoding.
- * Maps [-1/sqrt(2), 1/sqrt(2)] to the signed 12-bit range [-2047, 2047].
+ * Per ORIENTATION_SPEC.md §5.1: component = raw_int12 / 4096.0.
  */
-const QUAT_SCALE = 2047.0 * Math.SQRT2; // ~2895.27
+const QUAT_SCALE = 4096.0;
 
 /**
- * Decode a smallest-three packed quaternion (5 bytes) to [w, x, y, z].
+ * Decode a smallest-three packed quaternion (5 bytes, little-endian) to [w, x, y, z].
  *
- * @param bytes - 5-byte array containing the packed quaternion.
+ * @param bytes - 5-byte array containing the packed quaternion (LSB first).
  * @returns Quaternion as [w, x, y, z], normalised to unit length.
  */
 export function unpack_quaternion(bytes: Uint8Array): [number, number, number, number] {
@@ -45,25 +42,17 @@ export function unpack_quaternion(bytes: Uint8Array): [number, number, number, n
     return [1, 0, 0, 0];
   }
 
-  const b0 = bytes[0];
-  const b1 = bytes[1];
-  const b2 = bytes[2];
-  const b3 = bytes[3];
-  const b4 = bytes[4];
+  const b0 = bytes[0]; // LSB: C[7:0]
+  const b1 = bytes[1]; // B[3:0] | C[11:8]
+  const b2 = bytes[2]; // B[11:4]
+  const b3 = bytes[3]; // A[7:0]
+  const b4 = bytes[4]; // MSB: drop[1:0] | rsvd[1:0] | A[11:8]
 
-  // Bits 39:38 = dropped component index
-  const drop_idx = (b0 >> 6) & 0x03;
-
-  // Bits 37:36 = reserved (ignored)
-
-  // Bits 35:24 = int12 component A
-  const raw_a = ((b0 & 0x0F) << 8) | b1;
-
-  // Bits 23:12 = int12 component B
-  const raw_b = (b2 << 4) | ((b3 >> 4) & 0x0F);
-
-  // Bits 11:0 = int12 component C
-  const raw_c = ((b3 & 0x0F) << 8) | b4;
+  // Extract 12-bit unsigned fields (little-endian layout)
+  const raw_c = b0 | ((b1 & 0x0F) << 8);
+  const raw_b = ((b1 >> 4) & 0x0F) | (b2 << 4);
+  const raw_a = b3 | ((b4 & 0x0F) << 8);
+  const drop_idx = (b4 >> 6) & 0x03;
 
   // Convert from unsigned 12-bit to signed (two's complement), then scale
   const a = sign_extend_12(raw_a) / QUAT_SCALE;

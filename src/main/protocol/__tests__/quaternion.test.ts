@@ -2,12 +2,16 @@
  * Tests for smallest-three quaternion unpacking.
  *
  * Verifies that packed quaternions decode correctly to [w, x, y, z].
- * The encoding uses 5 bytes (40 bits):
- *   - 2 bits: dropped component index
- *   - 2 bits: reserved
- *   - 3 x 12-bit signed values scaled by QUAT_SCALE = 2047 * sqrt(2) ~ 2895.27
+ * The encoding uses 5 bytes (40 bits) in LITTLE-ENDIAN order:
+ *   Byte 0: C[7:0]                    (LSB)
+ *   Byte 1: B[3:0] | C[11:8]
+ *   Byte 2: B[11:4]
+ *   Byte 3: A[7:0]
+ *   Byte 4: drop[1:0] | rsvd[1:0] | A[11:8]  (MSB)
  *
- * Accuracy target: with QUAT_SCALE the quantisation step is ~0.000345,
+ * Scale factor: QUAT_SCALE = 4096.0 (per ORIENTATION_SPEC.md §5.1).
+ *
+ * Accuracy target: with QUAT_SCALE = 4096 the quantisation step is ~0.000244,
  * giving round-trip accuracy well under 0.1 degrees.
  */
 
@@ -15,12 +19,14 @@ import { describe, it, expect } from 'vitest';
 import { unpack_quaternion } from '../quaternion';
 
 /**
- * Scale factor matching the decoder in quaternion.ts.
- * Maps [-1/sqrt(2), 1/sqrt(2)] to signed 12-bit range [-2047, 2047].
+ * Scale factor matching the FC firmware (ORIENTATION_SPEC.md §5.1).
  */
-const QUAT_SCALE = 2047.0 * Math.SQRT2;
+const QUAT_SCALE = 4096.0;
 
-/** Helper: pack a quaternion using smallest-three encoding. */
+/**
+ * Helper: pack a quaternion using the FC's smallest-three encoding.
+ * Little-endian byte order per ORIENTATION_SPEC.md §5.2.
+ */
 function pack_quaternion(q: [number, number, number, number]): Uint8Array {
   // Find the component with the largest absolute value
   let max_idx = 0;
@@ -33,8 +39,6 @@ function pack_quaternion(q: [number, number, number, number]): Uint8Array {
   }
 
   // If the dropped component is negative, negate the entire quaternion
-  // (quaternion and its negation represent the same rotation)
-  // so the dropped component reconstructs as positive.
   const sign = q[max_idx] < 0 ? -1 : 1;
   const qs = q.map(v => v * sign);
 
@@ -47,9 +51,9 @@ function pack_quaternion(q: [number, number, number, number]): Uint8Array {
   }
 
   // Scale to 12-bit signed integers
-  const a = Math.round(components[0] * QUAT_SCALE);
-  const b = Math.round(components[1] * QUAT_SCALE);
-  const c = Math.round(components[2] * QUAT_SCALE);
+  const a_raw = Math.round(components[0] * QUAT_SCALE);
+  const b_raw = Math.round(components[1] * QUAT_SCALE);
+  const c_raw = Math.round(components[2] * QUAT_SCALE);
 
   // Clamp to 12-bit signed range [-2048, 2047]
   const clamp12 = (v: number) => Math.max(-2048, Math.min(2047, v));
@@ -60,22 +64,22 @@ function pack_quaternion(q: [number, number, number, number]): Uint8Array {
     return clamped < 0 ? clamped + 0x1000 : clamped;
   };
 
-  const ua = to_u12(a);
-  const ub = to_u12(b);
-  const uc = to_u12(c);
+  const ua = to_u12(a_raw);
+  const ub = to_u12(b_raw);
+  const uc = to_u12(c_raw);
 
-  // Pack into 5 bytes:
-  // Byte 0: [drop_idx:2][reserved:2][ua_hi:4]
-  // Byte 1: [ua_lo:8]
-  // Byte 2: [ub_hi:8]
-  // Byte 3: [ub_lo:4][uc_hi:4]
-  // Byte 4: [uc_lo:8]
+  // Pack into 5 bytes, LITTLE-ENDIAN (byte 0 = LSB):
+  // Byte 0: C[7:0]
+  // Byte 1: B[3:0] | C[11:8]
+  // Byte 2: B[11:4]
+  // Byte 3: A[7:0]
+  // Byte 4: drop[1:0] | rsvd[1:0] | A[11:8]
   const bytes = new Uint8Array(5);
-  bytes[0] = ((max_idx & 0x03) << 6) | ((ua >> 8) & 0x0F);
-  bytes[1] = ua & 0xFF;
+  bytes[0] = uc & 0xFF;
+  bytes[1] = ((ub & 0x0F) << 4) | ((uc >> 8) & 0x0F);
   bytes[2] = (ub >> 4) & 0xFF;
-  bytes[3] = ((ub & 0x0F) << 4) | ((uc >> 8) & 0x0F);
-  bytes[4] = uc & 0xFF;
+  bytes[3] = ua & 0xFF;
+  bytes[4] = ((max_idx & 0x03) << 6) | ((ua >> 8) & 0x0F);
 
   return bytes;
 }
@@ -102,11 +106,28 @@ describe('unpack_quaternion', () => {
     expect(result[3]).toBeCloseTo(0.0, 3);
   });
 
-  it('should decode 90-degree pitch quaternion', () => {
+  it('should decode 90-degree pitch quaternion (with clipping)', () => {
     // 90 degrees around Y axis: q = [cos(45deg), 0, sin(45deg), 0]
+    // Both w and y = 0.707, which exceeds 2047/4096 = 0.4998.
+    // The non-dropped 0.707 component clips to 0.4998, causing ~30° error.
+    // This is the documented worst-case from ORIENTATION_SPEC.md §8.2.
     const cos45 = Math.cos(Math.PI / 4);
     const sin45 = Math.sin(Math.PI / 4);
     const original: [number, number, number, number] = [cos45, 0, sin45, 0];
+
+    const packed = pack_quaternion(original);
+    const result = unpack_quaternion(packed);
+
+    const angle_err = quat_angle_deg(original, result);
+    // Clipping causes large error at this specific orientation
+    expect(angle_err).toBeLessThan(35);
+  });
+
+  it('should decode moderate pitch quaternion accurately', () => {
+    // 30 degrees around Y axis: q = [cos(15deg), 0, sin(15deg), 0]
+    // All components < 0.5, no clipping occurs
+    const half = (30 * Math.PI / 180) / 2;
+    const original: [number, number, number, number] = [Math.cos(half), 0, Math.sin(half), 0];
 
     const packed = pack_quaternion(original);
     const result = unpack_quaternion(packed);
@@ -200,7 +221,7 @@ describe('unpack_quaternion', () => {
       const result = unpack_quaternion(packed);
       const angle_err = quat_angle_deg(q, result);
 
-      // With QUAT_SCALE = 2047*sqrt(2), the step size is ~0.000345
+      // With QUAT_SCALE = 4096, the step size is ~0.000244
       // Worst-case angle error with 3 components is well under 0.1 degrees
       expect(angle_err).toBeLessThan(0.1);
     }

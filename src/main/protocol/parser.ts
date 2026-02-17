@@ -21,7 +21,8 @@ import {
   AckFire,
   AckConfig,
   Nack,
-  NackError
+  NackError,
+  HandshakeResponse
 } from './types';
 import {
   MSG_ID_FAST,
@@ -37,6 +38,7 @@ import {
   MSG_ID_ACK_CONFIG,
   MSG_ID_NACK,
   MSG_ID_CONFIRM,
+  MSG_ID_HANDSHAKE,
   SIZE_FC_MSG_FAST,
   SIZE_FC_MSG_GPS,
   SIZE_FC_MSG_EVENT,
@@ -197,6 +199,9 @@ export function parse_packet(
     case MSG_ID_CONFIRM:
       return parse_confirm(payload);
 
+    case MSG_ID_HANDSHAKE:
+      return parse_handshake(payload);
+
     default:
       // Unknown message ID — return typed unknown, never crash
       return {
@@ -207,23 +212,22 @@ export function parse_packet(
 }
 
 // ---------------------------------------------------------------------------
-// FC_MSG_FAST parser (msg_id 0x01, 19 bytes)
+// FC_MSG_FAST parser (msg_id 0x01, 20 bytes)
 // ---------------------------------------------------------------------------
 
 /**
  * Parse FC_MSG_FAST packet.
  *
- * Layout (19 bytes total):
+ * Layout (20 bytes total):
  *   [0]    msg_id (0x01)
  *   [1-2]  FC_TLM_STATUS (u16, little-endian)
- *   [3-4]  FC_TLM_ALT (u16, LE) — altitude = raw * 10.0
- *   [5-6]  FC_TLM_VEL (i16, LE) — velocity = raw * 0.1
+ *   [3-4]  FC_TLM_ALT (u16, LE) — altitude = raw * 1.0 (metres)
+ *   [5-6]  FC_TLM_VEL (i16, LE) — velocity = raw * 0.1 (m/s)
  *   [7-11] FC_ATT_QPACKED (5 bytes) — smallest-three quaternion
  *   [12-13] FC_FSM_TIME (u16, LE) — flight_time = raw * 0.1
  *   [14]   FC_PWR_BATT (u8) — batt_v = 6.0 + raw * 0.012
- *   [15-18] CRC-32 (u32, LE)
- *
- * Note: seq is not in the wire format; it is set to 0 for direct FC packets.
+ *   [15]   SEQ (u8) — rolling sequence number
+ *   [16-19] CRC-32 (u32, LE)
  */
 function parse_fc_fast(payload: Uint8Array, compute_derived_vals: boolean): ParseResult {
   if (payload.length < SIZE_FC_MSG_FAST) {
@@ -241,6 +245,7 @@ function parse_fc_fast(payload: Uint8Array, compute_derived_vals: boolean): Pars
   const quat_bytes = payload.subarray(7, 12);
   const time_raw = read_u16_le(payload, 12);
   const batt_raw = payload[14];
+  const seq = payload[15];
 
   const alt_m = alt_raw * ALT_SCALE;
   const vel_mps = vel_raw * VEL_SCALE;
@@ -256,7 +261,7 @@ function parse_fc_fast(payload: Uint8Array, compute_derived_vals: boolean): Pars
     quat,
     flight_time_s,
     batt_v,
-    seq: 0,
+    seq,
     crc_ok,
     corrected: false
   };
@@ -641,4 +646,51 @@ function parse_confirm(payload: Uint8Array): ParseResult {
       }
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// HANDSHAKE response parser (msg_id 0xC0, min 6 bytes)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse HANDSHAKE response packet from the FC.
+ *
+ * Layout (variable length, minimum 6 bytes):
+ *   [0]       msg_id (0xC0)
+ *   [1]       protocol_version (u8)
+ *   [2..N-5]  fw_version (ASCII string, variable length)
+ *   [N-4..N-1] CRC-32 (u32, LE)
+ *
+ * Minimum size: 6 bytes (msg_id + version + 0 chars fw_version + CRC32).
+ */
+function parse_handshake(payload: Uint8Array): ParseResult {
+  const MIN_HANDSHAKE_SIZE = 6;
+  if (payload.length < MIN_HANDSHAKE_SIZE) {
+    return {
+      ok: false,
+      error: `HANDSHAKE too short: ${payload.length} < ${MIN_HANDSHAKE_SIZE}`,
+      msg_id: MSG_ID_HANDSHAKE
+    };
+  }
+
+  const crc_ok = verify_packet_crc(payload);
+  const protocol_version = payload[1];
+
+  // Firmware version string: bytes between protocol_version and CRC
+  const fw_start = 2;
+  const fw_end = payload.length - 4;
+  let fw_version = '';
+  if (fw_end > fw_start) {
+    const fw_bytes = payload.subarray(fw_start, fw_end);
+    fw_version = String.fromCharCode(...fw_bytes);
+  }
+
+  const data: HandshakeResponse = {
+    msg_id: MSG_ID_HANDSHAKE,
+    protocol_version,
+    fw_version,
+    crc_ok
+  };
+
+  return { ok: true, message: { type: 'handshake', data } };
 }

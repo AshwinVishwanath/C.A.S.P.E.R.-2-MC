@@ -100,33 +100,48 @@ function wire_gs_pipeline(): void {
 
 /**
  * Wire FC direct-USB data through the protocol parser into the telemetry
- * store and CAC machine. Each data event carries raw bytes with msg_id
- * as byte 0.
+ * store and CAC machine. Each frame event carries a decoded COBS payload
+ * with msg_id as byte 0.
  */
 function wire_fc_pipeline(): void {
-  fc.on('data', (data: Uint8Array) => {
+  fc.on('frame', (data: Uint8Array) => {
     if (data.length < 1) return
 
     const result = parse_packet(data)
 
-    if (!result.ok) return
+    if (!result.ok) {
+      console.warn(`[FC] parse error: ${result.error}${result.msg_id !== undefined ? ` (msg_id=0x${result.msg_id.toString(16).padStart(2, '0')})` : ''}`)
+      return
+    }
 
     const msg = result.message
     switch (msg.type) {
       case 'fc_fast':
+        if (!msg.data.crc_ok) {
+          console.warn(`[FC] CRC mismatch on FC_MSG_FAST seq=${msg.data.seq}`)
+        }
         store.update_from_fc_fast(msg.data)
         cac.on_telemetry_status(msg.data.status)
         break
       case 'fc_gps':
+        if (!msg.data.crc_ok) {
+          console.warn('[FC] CRC mismatch on FC_MSG_GPS')
+        }
         store.update_from_gps(msg.data)
         break
       case 'fc_event':
+        if (!msg.data.crc_ok) {
+          console.warn('[FC] CRC mismatch on FC_MSG_EVENT')
+        }
         store.update_from_event(msg.data)
         break
       case 'ack_arm':
       case 'ack_fire':
       case 'nack':
         cac.on_message(msg)
+        break
+      case 'handshake':
+        store.set_protocol_ok(true, msg.data.fw_version)
         break
     }
   })
@@ -140,8 +155,14 @@ function wire_connection_events(): void {
   gs.on('close', () => {
     store.set_connection('gs', false)
   })
+  gs.on('error', (err: Error) => {
+    console.error('[GS] transport error:', err.message)
+  })
   fc.on('close', () => {
     store.set_connection('fc', false)
+  })
+  fc.on('error', (err: Error) => {
+    console.error('[FC] transport error:', err.message)
   })
 }
 

@@ -4,82 +4,95 @@
  * When a packet fails CRC-32 validation, this module attempts to locate
  * and correct a single-bit error using a precomputed syndrome table.
  *
- * CRC-32 matches the STM32 hardware CRC peripheral:
- *   - Polynomial: 0x04C11DB7
+ * CRC-32 matches the standard CRC-32/ISO-HDLC:
+ *   - Polynomial: 0x04C11DB7 (reflected: 0xEDB88320)
  *   - Initial value: 0xFFFFFFFF
- *   - No final XOR
- *   - Not reflected (MSB-first)
- *   - Processes data in 32-bit big-endian words (last partial word zero-padded)
+ *   - Final XOR: 0xFFFFFFFF
+ *   - Reflect input/output: YES
+ *   - Process: byte-by-byte with lookup table
  */
 
-/** CRC-32 polynomial (STM32 hardware CRC). */
-const POLY = 0x04C11DB7;
+/** CRC-32 reflected polynomial (standard CRC-32/ISO-HDLC). */
+const POLY = 0xEDB88320;
 
 /** CRC-32 initial value. */
 const CRC_INIT = 0xFFFFFFFF;
 
+/** CRC-32 final XOR value. */
+const CRC_XOR_OUT = 0xFFFFFFFF;
+
 /**
- * Internal CRC-32 engine with configurable initial value.
+ * Precomputed 256-entry lookup table for reflected CRC-32.
+ */
+const CRC32_TABLE: Uint32Array = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let crc = i;
+    for (let bit = 0; bit < 8; bit++) {
+      if (crc & 1) {
+        crc = (crc >>> 1) ^ POLY;
+      } else {
+        crc = crc >>> 1;
+      }
+    }
+    table[i] = crc >>> 0;
+  }
+  return table;
+})();
+
+/**
+ * Raw CRC-32 engine with configurable initial value and NO final XOR.
  *
- * Data is processed in 32-bit words with big-endian byte ordering.
- * If the data length is not a multiple of 4, the final partial word
- * is zero-padded on the right (least-significant bytes).
+ * Data is processed byte-by-byte using the reflected lookup table.
+ * Returns the raw register value without applying the final XOR.
  *
  * @param data - Input bytes to compute CRC over.
  * @param init - Initial CRC register value.
- * @returns 32-bit unsigned CRC value.
+ * @returns 32-bit unsigned raw CRC register value (no final XOR).
  */
-function crc32_engine(data: Uint8Array, init: number): number {
+function crc32_engine_raw(data: Uint8Array, init: number): number {
   let crc = init >>> 0;
 
-  // Pad to a multiple of 4 bytes (zero-fill on the right).
-  const padded_len = Math.ceil(data.length / 4) * 4;
-  const padded = new Uint8Array(padded_len);
-  padded.set(data);
-
-  for (let i = 0; i < padded_len; i += 4) {
-    // Big-endian word: byte[i] is MSB.
-    const word =
-      ((padded[i] << 24) | (padded[i + 1] << 16) | (padded[i + 2] << 8) | padded[i + 3]) >>> 0;
-    crc ^= word;
-    for (let bit = 0; bit < 32; bit++) {
-      if (crc & 0x80000000) {
-        crc = ((crc << 1) ^ POLY) >>> 0;
-      } else {
-        crc = (crc << 1) >>> 0;
-      }
-    }
+  for (let i = 0; i < data.length; i++) {
+    crc = CRC32_TABLE[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
   }
 
   return crc >>> 0;
 }
 
 /**
- * Compute CRC-32 matching the STM32 hardware CRC peripheral.
+ * Compute standard CRC-32 (CRC-32/ISO-HDLC).
  *
- * Uses init = 0xFFFFFFFF as the STM32 hardware CRC does.
+ * Uses init = 0xFFFFFFFF and final XOR = 0xFFFFFFFF.
  *
  * @param data - Input bytes to compute CRC over.
  * @returns 32-bit unsigned CRC value.
  */
 export function crc32_compute(data: Uint8Array): number {
-  return crc32_engine(data, CRC_INIT);
+  return (crc32_engine_raw(data, CRC_INIT) ^ CRC_XOR_OUT) >>> 0;
 }
 
 /**
- * Compute CRC-32 with zero initial value.
+ * Compute raw CRC-32 with zero initial value (for syndrome generation).
  *
  * Used for syndrome generation: the syndrome of a single-bit error is
  * independent of the payload content. Mathematically, for the XOR-based
- * CRC computation, CRC_init(x ^ e) XOR CRC_init(x) = CRC_0(e), where
- * CRC_0 uses init=0 and e is the error pattern. This linearity property
- * allows precomputation of syndromes without knowing the actual payload.
+ * CRC computation:
+ *
+ *   syndrome = CRC(x ^ e) XOR CRC(x)
+ *            = [raw(x^e, init) ^ F] XOR [raw(x, init) ^ F]
+ *            = raw(x^e, init) XOR raw(x, init)
+ *            = raw(e, 0)          (linearity of the XOR engine)
+ *
+ * where F = CRC_XOR_OUT (0xFFFFFFFF) and raw() is the engine without
+ * final XOR. The final XOR cancels in the XOR of two CRCs, so syndrome
+ * computation uses init=0 and NO final XOR.
  *
  * @param data - Input bytes (error pattern) to compute syndrome CRC over.
- * @returns 32-bit unsigned CRC value with zero init.
+ * @returns 32-bit unsigned raw CRC value (init=0, no final XOR).
  */
 function crc32_zero_init(data: Uint8Array): number {
-  return crc32_engine(data, 0x00000000);
+  return crc32_engine_raw(data, 0x00000000);
 }
 
 /**

@@ -1,9 +1,9 @@
 /**
  * Hand-crafted known-good byte arrays for all C.A.S.P.E.R. 2 message types.
  *
- * Each fixture is a complete packet with a valid STM32 CRC-32. The CRC covers
- * all bytes from the start up to (but not including) the last 4 bytes, which
- * are the CRC itself in little-endian order.
+ * Each fixture is a complete packet with a valid standard CRC-32 (CRC-32/ISO-HDLC).
+ * The CRC covers all bytes from the start up to (but not including) the last 4 bytes,
+ * which are the CRC itself in little-endian order.
  *
  * All multi-byte fields are little-endian as per the protocol specification.
  *
@@ -11,7 +11,7 @@
  */
 
 // ---------------------------------------------------------------------------
-// FC_MSG_FAST (msg_id 0x01, 19 bytes)
+// FC_MSG_FAST (msg_id 0x01, 20 bytes)
 // ---------------------------------------------------------------------------
 
 /**
@@ -25,16 +25,17 @@
  *   [7-11]  quat = identity [w=1, x=0, y=0, z=0] (drop_idx=0, A=B=C=0)
  *   [12-13] time_raw = 0 (0.0 s)
  *   [14]    batt_raw = 100 (7.2 V)
- *   [15-18] CRC-32
+ *   [15]    seq = 0
+ *   [16-19] CRC-32
  *
  * Expected parsed values:
  *   fsm_state = Pad (0x0)
- *   alt_m = 0, vel_mps = 0, batt_v = 7.2, flight_time_s = 0
+ *   alt_m = 0, vel_mps = 0, batt_v = 7.2, flight_time_s = 0, seq = 0
  */
 export const FC_FAST_PAD_IDLE = new Uint8Array([
   0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x31,
-  0xE6, 0x5B, 0x5E
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x00,
+  0x67, 0x74, 0x42, 0x43
 ]);
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@ export const FC_FAST_PAD_IDLE = new Uint8Array([
  */
 export const FC_GPS_3D_FIX = new Uint8Array([
   0x02, 0xE8, 0x03, 0x00, 0x00, 0xD0, 0x07, 0x00,
-  0x00, 0x0F, 0x00, 0x03, 0x0C, 0x92, 0x08, 0x56,
+  0x00, 0x0F, 0x00, 0x03, 0x0C, 0xF2, 0xA7, 0x11,
   0x01
 ]);
 
@@ -82,8 +83,8 @@ export const FC_GPS_3D_FIX = new Uint8Array([
  *   event_type = 3, event_data = 50, flight_time_s = 30.0
  */
 export const FC_EVENT_APOGEE = new Uint8Array([
-  0x03, 0x03, 0x32, 0x00, 0x2C, 0x01, 0x00, 0x53,
-  0x01, 0x62, 0xD2
+  0x03, 0x03, 0x32, 0x00, 0x2C, 0x01, 0x00, 0x6E,
+  0xD2, 0xBD, 0xD9
 ]);
 
 // ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ export const FC_EVENT_APOGEE = new Uint8Array([
  * Layout:
  *   [0]     msg_id = 0x10
  *   [1-2]   status: byte0=0x01 (CNT1), byte1=0x10 (FSM=Boost)
- *   [3-4]   alt_raw = 100 (1000.0 m)
+ *   [3-4]   alt_raw = 100 (100.0 m)
  *   [5-6]   vel_raw = 500 (50.0 m/s)
  *   [7-11]  quat = identity
  *   [12-13] time_raw = 50 (5.0 s)
@@ -115,7 +116,7 @@ export const FC_EVENT_APOGEE = new Uint8Array([
  *   [34-37] CRC-32
  *
  * Expected parsed values:
- *   fsm_state = Boost, alt_m = 1000, vel_mps = 50, batt_v = 7.2
+ *   fsm_state = Boost, alt_m = 100, vel_mps = 50, batt_v = 7.2
  *   seq = 42, rssi_dbm = -120, snr_db = 10, data_age_ms = 100
  *   stale = false, mach = 0.147, qbar_pa = 1500, pitch_deg = 90
  */
@@ -124,7 +125,7 @@ export const GS_TELEM_BOOST = new Uint8Array([
   0x00, 0x00, 0x00, 0x00, 0x32, 0x00, 0x64, 0x2A,
   0x50, 0xFB, 0x28, 0x32, 0x00, 0x64, 0x00, 0x00,
   0x93, 0x00, 0xDC, 0x05, 0x00, 0x00, 0x84, 0x03,
-  0x00, 0x00, 0x7E, 0xA4, 0xB5, 0xC4
+  0x00, 0x00, 0xC1, 0xBF, 0xB7, 0xAC
 ]);
 
 // ---------------------------------------------------------------------------
@@ -150,7 +151,7 @@ export const GS_TELEM_BOOST = new Uint8Array([
  */
 export const ACK_ARM_CH1 = new Uint8Array([
   0xA0, 0x34, 0x12, 0x00, 0x01, 0x01, 0x01, 0x00,
-  0x70, 0x23, 0x03, 0xD7
+  0x27, 0x26, 0x38, 0x7D
 ]);
 
 // ---------------------------------------------------------------------------
@@ -176,7 +177,7 @@ export const ACK_ARM_CH1 = new Uint8Array([
  */
 export const ACK_FIRE_CH2 = new Uint8Array([
   0xA1, 0x78, 0x56, 0x01, 0x64, 0x02, 0x03, 0x00,
-  0x00, 0x52, 0x25, 0x5A, 0xE2
+  0x00, 0x53, 0xA0, 0xC7, 0x25
 ]);
 
 // ---------------------------------------------------------------------------
@@ -197,6 +198,6 @@ export const ACK_FIRE_CH2 = new Uint8Array([
  *   nonce = 0xABCD, error_code = NackError.NotArmed (3)
  */
 export const NACK_NOT_ARMED = new Uint8Array([
-  0xE0, 0xCD, 0xAB, 0x03, 0x00, 0x00, 0x54, 0xC6,
-  0x98, 0xAF
+  0xE0, 0xCD, 0xAB, 0x03, 0x00, 0x00, 0x16, 0xB6,
+  0x2F, 0x2E
 ]);
