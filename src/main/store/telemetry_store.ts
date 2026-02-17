@@ -11,6 +11,7 @@
 import { TelemetrySnapshot, PyroState, EventLogEntry, DEFAULT_SNAPSHOT } from './store_types';
 import { FcMsgFast, FcMsgGps, FcMsgEvent, GsMsgTelem, FcTlmStatus, EventType, FsmState, FSM_STATE_NAMES } from '../protocol/types';
 import { RING_BUFFER_DEPTH, STALE_THRESHOLD_MS } from '../protocol/constants';
+import { quat_to_euler_deg } from '../protocol/derived';
 
 export class TelemetryStore {
   private snapshot: TelemetrySnapshot;
@@ -106,6 +107,11 @@ export class TelemetryStore {
     this._update_pyro_from_status(parsed.status);
     s.fsm_state = parsed.status.fsm_state;
     s.sys_error = parsed.status.error;
+    // Compute Euler angles from quaternion (not provided by FC direct mode)
+    const [roll, pitch, yaw] = quat_to_euler_deg(parsed.quat);
+    s.roll_deg = roll;
+    s.pitch_deg = pitch;
+    s.yaw_deg = yaw;
     // Ring buffers
     this._push_ring(s.buf_alt, s.alt_m);
     this._push_ring(s.buf_vel, s.vel_mps);

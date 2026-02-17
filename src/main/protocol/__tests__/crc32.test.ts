@@ -1,96 +1,49 @@
 /**
- * Tests for STM32 hardware CRC-32 implementation.
+ * Tests for standard CRC-32 (CRC-32/ISO-HDLC) implementation.
  *
- * The STM32 CRC peripheral uses polynomial 0x04C11DB7, init 0xFFFFFFFF,
- * NO final XOR, and processes data in 32-bit big-endian words.
+ * Parameters:
+ *   - Polynomial: 0x04C11DB7 (reflected: 0xEDB88320)
+ *   - Init: 0xFFFFFFFF
+ *   - Reflect in/out: YES
+ *   - Final XOR: 0xFFFFFFFF
+ *   - Byte-by-byte processing
  *
- * The standard check value for "123456789" (ASCII) through the STM32 CRC
- * peripheral (processing as big-endian 32-bit words with the last byte
- * zero-padded) is 0x89A1897F.
+ * The canonical check value for ASCII "123456789" is 0xCBF43926.
  */
 
 import { describe, it, expect } from 'vitest';
 import { crc32_compute, crc32_verify } from '../crc32';
 
 describe('crc32_compute', () => {
-  it('should produce correct CRC for a single 32-bit word [0x00000000]', () => {
-    // Processing the word 0x00000000:
-    // crc = 0xFFFFFFFF ^ 0x00000000 = 0xFFFFFFFF
-    // After 32 shifts through the polynomial: 0xC704DD7B
-    const data = new Uint8Array([0x00, 0x00, 0x00, 0x00]);
-    const result = crc32_compute(data);
-    expect(result).toBe(0xC704DD7B);
-  });
-
-  it('should produce correct CRC for a single 32-bit word [0xFFFFFFFF]', () => {
-    // crc = 0xFFFFFFFF ^ 0xFFFFFFFF = 0x00000000
-    // After 32 shifts: all zeros shifted left = 0x00000000
-    const data = new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF]);
-    const result = crc32_compute(data);
-    expect(result).toBe(0x00000000);
-  });
-
-  it('should produce correct CRC for "1234" (0x31323334)', () => {
-    // ASCII "1234" = bytes [0x31, 0x32, 0x33, 0x34]
-    // One complete 32-bit word, big-endian: 0x31323334
-    const data = new Uint8Array([0x31, 0x32, 0x33, 0x34]);
-    const result = crc32_compute(data);
-    // Verify it returns a valid 32-bit unsigned value
-    expect(result >>> 0).toBe(result);
-    // Known STM32 CRC for this word
-    expect(result).toBe(0xCBF43926 ^ 0x04C11DB7 ^ 0xCBF43926 ? result : result);
-    // We verify determinism: same input always produces same output
-    expect(crc32_compute(data)).toBe(result);
-  });
-
-  it('should handle "123456789" (9 bytes, last word zero-padded)', () => {
-    // "123456789" = [0x31,0x32,0x33,0x34, 0x35,0x36,0x37,0x38, 0x39,0x00,0x00,0x00]
-    // Word 0: 0x31323334
-    // Word 1: 0x35363738
-    // Word 2: 0x39000000 (padded)
+  it('should produce the standard check value for "123456789"', () => {
     const data = new Uint8Array([
       0x31, 0x32, 0x33, 0x34,
       0x35, 0x36, 0x37, 0x38,
       0x39
     ]);
     const result = crc32_compute(data);
-    // STM32 CRC-32 of "123456789" with the 9th byte zero-padded to a word
-    // Known value: 0xAE24E09D
-    expect(result).toBe(0xAE24E09D);
+    expect(result).toBe(0xCBF43926);
   });
 
   it('should handle empty input', () => {
     const data = new Uint8Array([]);
     const result = crc32_compute(data);
-    // No words processed: CRC stays at init value 0xFFFFFFFF
-    expect(result).toBe(0xFFFFFFFF);
+    // CRC-32 of empty data: init 0xFFFFFFFF XOR final 0xFFFFFFFF = 0x00000000
+    expect(result).toBe(0x00000000);
   });
 
-  it('should handle 1-byte input (padded to one word)', () => {
-    // 0xAB -> word 0xAB000000
-    const data = new Uint8Array([0xAB]);
+  it('should produce correct CRC for a single byte (0x00)', () => {
+    const data = new Uint8Array([0x00]);
     const result = crc32_compute(data);
-    // crc = 0xFFFFFFFF ^ 0xAB000000 = 0x54FFFFFF
-    // Process 32 bits through the polynomial
-    expect(result >>> 0).toBe(result);
-    // Verify determinism
-    expect(crc32_compute(new Uint8Array([0xAB]))).toBe(result);
+    // Known: CRC-32 of single zero byte = 0xD202EF8D
+    expect(result).toBe(0xD202EF8D);
   });
 
-  it('should handle 2-byte input (padded to one word)', () => {
-    const data = new Uint8Array([0x12, 0x34]);
+  it('should produce correct CRC for a single byte (0xFF)', () => {
+    const data = new Uint8Array([0xFF]);
     const result = crc32_compute(data);
-    // 0x12340000 as the single word
-    expect(result >>> 0).toBe(result);
-    expect(crc32_compute(new Uint8Array([0x12, 0x34]))).toBe(result);
-  });
-
-  it('should handle 3-byte input (padded to one word)', () => {
-    const data = new Uint8Array([0xAA, 0xBB, 0xCC]);
-    const result = crc32_compute(data);
-    // 0xAABBCC00 as the single word
-    expect(result >>> 0).toBe(result);
-    expect(crc32_compute(new Uint8Array([0xAA, 0xBB, 0xCC]))).toBe(result);
+    // Known: CRC-32 of single 0xFF byte = 0xFF000000
+    expect(result).toBe(0xFF000000);
   });
 
   it('should produce different CRC for different inputs', () => {
@@ -99,16 +52,36 @@ describe('crc32_compute', () => {
     expect(a).not.toBe(b);
   });
 
-  it('should match manual word-by-word computation for two words', () => {
-    // Two complete words
+  it('should detect a single byte flip', () => {
+    const original = new Uint8Array([0x48, 0x65, 0x6C, 0x6C, 0x6F]); // "Hello"
+    const flipped = new Uint8Array([0x48, 0x65, 0x6C, 0x6D, 0x6F]);  // "Helmo"
+    expect(crc32_compute(original)).not.toBe(crc32_compute(flipped));
+  });
+
+  it('should be deterministic (same input always produces same output)', () => {
+    const data = new Uint8Array([0xAA, 0xBB, 0xCC, 0xDD]);
+    const crc1 = crc32_compute(data);
+    const crc2 = crc32_compute(data);
+    expect(crc1).toBe(crc2);
+  });
+
+  it('should return unsigned 32-bit values', () => {
+    const data = new Uint8Array([0x01, 0x02, 0x03, 0x04]);
+    const result = crc32_compute(data);
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThanOrEqual(0xFFFFFFFF);
+    expect(result >>> 0).toBe(result);
+  });
+
+  it('should handle multi-byte input correctly', () => {
     const data = new Uint8Array([
       0x01, 0x02, 0x03, 0x04,
       0x05, 0x06, 0x07, 0x08
     ]);
     const result = crc32_compute(data);
     expect(result >>> 0).toBe(result);
-    // Verify it's not the init value (data was processed)
-    expect(result).not.toBe(0xFFFFFFFF);
+    // Verify it's not the empty-input value
+    expect(result).not.toBe(0x00000000);
   });
 });
 
@@ -131,9 +104,9 @@ describe('crc32_verify', () => {
     expect(result.computed).not.toBe(wrong_crc);
   });
 
-  it('should handle empty data (CRC = init)', () => {
+  it('should handle empty data', () => {
     const data = new Uint8Array([]);
-    const result = crc32_verify(data, 0xFFFFFFFF);
+    const result = crc32_verify(data, 0x00000000);
     expect(result.valid).toBe(true);
   });
 
@@ -143,7 +116,7 @@ describe('crc32_verify', () => {
       0x35, 0x36, 0x37, 0x38,
       0x39
     ]);
-    const result = crc32_verify(data, 0xAE24E09D);
+    const result = crc32_verify(data, 0xCBF43926);
     expect(result.valid).toBe(true);
   });
 

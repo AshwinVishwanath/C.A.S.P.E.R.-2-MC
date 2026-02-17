@@ -11,12 +11,14 @@ import {
   build_fire_command,
   build_confirm,
   build_abort,
+  build_testmode,
   generate_nonce
 } from '../command_builder';
 import { crc32_compute } from '../crc32';
 import {
   MSG_ID_CMD_ARM,
   MSG_ID_CMD_FIRE,
+  MSG_ID_CMD_TESTMODE,
   MSG_ID_CONFIRM,
   MSG_ID_ABORT,
   MAGIC_1,
@@ -201,6 +203,18 @@ describe('build_abort', () => {
     const expected_crc = crc32_compute(data);
     const actual_crc = read_u32_le(pkt, 5);
     expect(actual_crc).toBe(expected_crc);
+  });
+});
+
+describe('build_testmode', () => {
+  it('should produce a 1-byte packet', () => {
+    const pkt = build_testmode();
+    expect(pkt.length).toBe(1);
+  });
+
+  it('should have correct message ID (0x82)', () => {
+    const pkt = build_testmode();
+    expect(pkt[0]).toBe(MSG_ID_CMD_TESTMODE);
   });
 });
 

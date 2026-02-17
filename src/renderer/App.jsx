@@ -3,6 +3,7 @@ import useTelemetry from './hooks/use_telemetry';
 import useDiagnostics from './hooks/use_diagnostics';
 import useSerial from './hooks/use_serial';
 import useCommand from './hooks/use_command';
+import { SerialPortPicker } from './components/SerialPortPicker';
 var MASCOT_SRC="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAYAAACOEfKtAAAPD0lEQVR4nO2ce5TdVXXHv3vmzkzMY0JCYoIJbygmkRBsbUEeaVAKBW2pVagUVIpgKT7Qgra1bTQuqNW2rlVbVoWlUWqwKi0uuqyBAvIyLS9TXSFoFHkmAUJChpDnZObTP/Y+8ztz596Z+5pHV3PWuuv3O6999vn+9tlnn33OuVJZAKw87UA4EOoODQvSAQmsL7SNNwMTNdQqSAcAbDKUxpuBFOKLt0ka7sv3S8LMGBuuRg7jCmCA1i6pL0Dpq7FeSRKS+scbzHEBEGiTZGbWJ2l/pM2StEjSQklHSJoZxXdK2ixpg6T1kjaY2f6MVnvQmRhhtGdhoD17nwt8BHiIwaEf6AG2A7vK8l4EVgLLyuhODH0+WgACbamTwKHA9Rkoa4EVwFuBw4CpUd6ATmAmcALwXuBm4JWo9xPgoqyNlo2oCWUH5tIBXAX0BQDXAwuq1QHaK0kWMBl4F/Bo0HkEODHy2odSa4jniQFg6hBwMPDd6PB3gGOzMh21dDxA7SpLuwB4KeheEmlNS2KtOAwpBFirZrak4IGjJK2WdKykS8zsq5HfZWZ7M4YXSXqjpGMkzQkyL0j6maS1ZrYuo90lqdfM+oGDJX1Z0m9L+oSZfQ4o5ZNNA7w3hkOrJDDTd0cAzwIvA2+KtM7UDnA4cB2wsWyy2I5PJHnYCHwWOCJrpzN7/7so99GIj72V0QoAQ/m3AdOAx0PpL4q8SfHsAj6TgXMn8H5gEdAdNAyYDhwPXAaszsqvADqCVilTFV+M/HMi3hKdWFfnW0Ajdebb0Zk3RzyBdzQ+8wKsospEUoX20cCXo+4aYG6k5yDeHxI8i2z2H5PQLIBZJ86PTl4Z8a54LsBtuZ4kJZHeFiAk8yX/teUARflzgD3AT4FDIq0Uz8Pxmf5rOU9jEpoBMOvwa4Dngf+O9M4AYQ6uxzYTs3ACrY422rKhuxg3tH8ITMLNnpT3l/EBXx/xsQGxSQCTBFwezP9qxFOn7gJ2A8fl6Q22lWieGm3dmHgIkKcAOzIprGtCaRiHFkngE8DDkdYZz0ujo++IeDPgpRm8XNpOiXhSF1+MYT6t3r6NOYCZ7lscnbkowGzHVw5bgTujTEdWrxS/EdsNegPlM/odwCbgwZw+8Kbg5W05j6MamgAwDd9P4s6AWZmk/EF05FdSp1vIb2r3qmjj+NSPAPZV4B/ysjXSHTcJvBvYEO/JmF4LrE9pSXoifgXwKWB6tfYzaZsSw/XDGZ3Uxmx85r0u4mkYrwEeyvkZTRwaqpiBYbiJcnOWNyck4xP5EIy8j1OE/8gBKaOfQPpmVv7aSGvP8h8B/ifek+5dCbxYb//GC8ApMXxXZHlvT8M34kl/dQJPAvuBvVHmhCiTe28SOEcF7X1RZyvF5NARNP8maHVlPH0u6nTlvLYKh1ZZ6Kmx7njfkuUtke9lbEi8xSL9tXKHQXvwgaRfqsBXon1MltcuaYak+alM0NwgqVPS7MwRQFan5aHVS5zEZO4FOUrSNjN7JeKpY3ujXIqbpD1lZfKwRwWYaf9kb1mZrfF8TVl6v2rcb0mhVk9MqwBMjSUA8g4cJGmHNDAsANrMbIukdXJQ2iX1Sno06vRn9dP7jyX1RFmT9KSkZ4NmKtNbgbfZkl5JbrOaOzRO+8I9cqk4LEvr1GBApEKS/jTqmKQ/N7NNuA9x4OubGZG2XdKfyD/WHknXmFlvWR+mxzMfAQslPSW5Ph31XbxGZ59MaW8A7s7S/wXYVKFceh5GYbtV1VMUZtIi4JgyGvms3g/MiHgXsBO4Pi9XT39GCq10OLbLv/wjks6l8DZvlnQwMMnM0hBPktVmZs9kaX2RNkhiybYuzeyxSBtSTtICSS9L6gkATpA0WdIdLeznoDAafrLV8tn4hOjEY/JhfGjk518WioX/tcCR4aIv5b8A9kx8E6qjAnjp/ZclrTeztOH+LvnkcU/k1zyRNDzUmxjCyV6bE8PoCxFfEjbe70W8lNXJvc57gWeAN1SgvTRsuccp26nLhvFUoBffHjDcvbUFuC3y6zJjGsWhWW9M0lOrw9DtDD20HfhG5A1yHGTAL8EdAgD3hgH8t8CDkbYWX64NWq1kbZ4R5c6I+PsifmpebtRxaBGApwTzH4r41/FFfVeSukpt4hvofxGS1hu/dcDVFNsB5XXTBPKlkOLkWN1I4VKrW1WNC4BRP0nUanwz6Q3xAzgvG17thEMgr5fRmQxMLqedJJDCzV+KD9MD3BDlvoQ7FpJDt+5VyHgCmNa6J1OEO3BP9PeHazdA7WKwniyFKhjOxHlrAPZt3IwCuDfyGpooa8VhNPZN8zUoklZJWiZpkqRfB9ZK+k9JD0n6iaSNkrZnx9sGzZTlm+MBZFoHL5J0kqQL5RbFO4M2kroCvFE9LNXykwlAh5n14pvoayQtMLOfhzI/V9I5khaXVdsuaZvchtsV8QRcl9wsmiIH7mBJ07K6vZLulfQdSbfGauY2SQvNLBnclWzGkfpREw4tBTAxGgp/laR3SHpO0rWSvmZmu1M5udG7WNJx8qXfXPmZwCly4zctAffG71U5yJslPSFfRz9mZr/I2j9Z0nJJZ0XStyS9z8x2NwJiQ6FRHZhNHjOB/wo99GfAA5kuvBf4GHBiI4q9QpuzgLcB/4RvowJsA64BPhrxNRRLu5Z7pFsigZnkzZR0p6QTJZ1hZt+P/CWSLpB0nqTXZ1U3SXpavtjfJOkluXNhlwpdOknuJOiWNEvSIZKOlLvJpkaZHdHuKkmrzWxntHuWpO9J+qGkt5hZT6slsWkAKQ6Hl+RLppMkLTOze3C3em9OD5gnd7KeKOl4+Ymt+fLhO5JU7pIP42fl7q1HFJORme3L2ijJnay9+EnWuyXdJ+lM+SQ1emer6x3CFMbzP8eQOTfi+dblNDKbb7i2w2Tpxs8TzsBtxhGthTCB5lMctDSK7c3fCd6+mvM8Ei8jlZGaNGMozv9dLOki+dm87wbj/VFmqaSvSzrdzJ7MwOiT9Gty6dsf5fvlQzc9k3SnTluWdr9cGk2FtH1Q0tXAFDPbi++ddJjZrcBySZ8G7jCzm2GUDqfXijzFamAmfoTinkhPhnRaYv1RfP10FiZJRVruNRruoVjNpLY+FnnzMh5zXh7AV0czGGFEjIUEWkjfcrmivzQYJXx9qdwhcol6sax+OtJ2vqQfSdqtwUZ0t9yUSZIoxZ0SSSvk9mQpJC0NySej/GvlBrrF5Ebw9h5Jj0tabmZXRb2mpLAhAPGZrA+YI+kKSbeY2RNZfq5jDpXbcDvKyOyTd/ZhuTH8bvlQtki/ycy2VWl/q7zj+apHcpvT5B9tbeIlG6q/AFZLuhL4rJk9T6vtw1pENxsSn8qG1Hr8hGkaop0xfG4HfpZoZ3XfG/WOAn4/3vfja9o+4KwYZuloXP5+E35oKG2ep4lsftB5f7SV9oI7cFXyTMbvdXlfGsFBasAjHYT7gvkPyu2vC+U3im6U9Biw1Mz2hakwW8U+caX2ppvZKvnu3UFym2+amd0e+Wmnjew3hK149sRzrpkRw3up/IbTP8rtzfPktuEH8Almf61gVQwMPQ060i9J0GnxJX8zo3U2frQN/ExzN+5muiXyS5mEvifKHd8Azytx706SsIGZGl+R/BT3UH8oGx3LsvpnRno6Dpef9qrrVyo3KBnBkKaYHE6X66EH0xAys9XAYkkrJd0g6cPyyWBzTiKeydTpBg6STxD9FcrloSTXkx0abHQTfPcBz8n3Rh6Ub2l+RdIfhpmTLik+Gm2dLukHwXtdOOQMNRrmyRf5PSpsvg5Ju8zsfGCNpJOj7NaQkpKKWe85+ZB+oMH2fyxpP8X6tgT0yj05vXLwvmdml4Zk5m2/Gu+zG2x7IDQD4PNy86XbzF4O8PaHCXOpHLxvSPotSVNjptsjDQy5O+Xr4+M0VNoqfflcT+2TdOtAhtPeF7RL8p3AH0m6GDjbzFZHXnK1zZRL8XNN9L9yGEmhZvpmQeiRlZleawf+ONL/Hd9t2xrxu4B3E9cSWszz4cAHgIejradCB94X8cspZupJwL/iu3wDBne9OAzHTC1mTGLmI8HgC/hFmc0R/wpuOkzDzY378ZuVKawDbgSuxBX6QuB1AXgXZfvC0enpwDz80s050fZNFC58AsBv4tuqR+O3BdKZwhfw1cu2iF+Y92VMAYxySRLPBm4LUP4N+I2sTAlf5n0+4kvxq1oPMfQeMNHxHfg2aP57NfLKwxbczrya4njIvMi7POPjLfg12bW49J2S96EZHJpyZ1HFik+MxTJqnaQtZrasrMwkSa+T306fL19+zZC7tcp181755PCSfIn2rKSnzSyf3VO7Junnkjaa2alUuXRYjfcsv7nLhlTYv62Uj+u9gUV9vOf24s0hKSm/Y7gv3wC/7Vm7SRdfE1J4LIWLrFSBx6adCa2rOJROAvCy6MzREc+vcrVlANTzG7SnXM477kvcDXwr56VO/scdwPy6K4zRFVSKCe6T0e7peXoddMYXwKCVX3MYuPrQyjYqtJkkuxOf2DaFRFa8ATAcnYYZaKhiZVppGL8zpOHteXoTdMuHbn7Moz2TwoW4h+duCo/OxLvmMBytTM+tB57G7bz2VquKCunJ0XBBfLzLIl7Tx5sQAAa9JA1vjo6kA0AdldoK0AdNGNV4zFTEEuDTwHLgpArlnwJuz/mpge+JAWDQLFfsH0/pWV7VO3SV9FdW75KgmRvaj+PnpU+jOCe4IspPDAkks6OqSVJeLtOHfx8d+kwVutNw0+cG4K9xh2jKS7Zcsj2n4yuau4CD8MniQgafhgBfrXRTpgMz3obYvhNKAhPdTGr+Kjp2H3BS5HXhrv30HzAv4wcsAX5AXBWL+mnoXhH5iyq0NxdfOi5ppG8TDsBEOwPxd/EFPvhKZUe83wW8MSSsG7iYwknxBeDIAPu0kL77gl5aXVT7t6N6DwxMPACzNhKIk3HX/kr8gNBZVcpPBT6fDcmd8dwQgFbSkVX/OqpGHsfucFEjgSonA4LxtLUpSe3JGQDMlztoj5E7TG8xs52jwXOtNMcNwNSWyvY2hgG1rVreWPFbKYwrgPWGGI75kOwbLV5rxWHC/IdqLSH8d6N/yvRAaD7UOolMjL/N/D8cWrcb9f80HJDAVocDEnggtCTUKkj/CyUa/nShMB2jAAAAAElFTkSuQmCC";;
 var SAD_MASCOT_SRC="data:image/png;base64,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";
 var LOGO_SRC="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABoAAAAaCAYAAACpSkzOAAADC0lEQVR4nKXWS6jVVRQG8N+61/ftgoSFGZgpBKZW0KAizAKDLGzUwCgTclAQQYOaBEEgDRoUPSiiiaMGIQ2CaBCNgtCopg0ssaLMQshHvrt+Df775Ln3nnPuFdfk/9hrr2+tb3977V3maUnGe6/tWbhUVRky5cosSc0xPjafOHMGqapLSRbgQazGMlzEKXxdVT9dFVAfyK14Et/jtzbnHBZjM85W1Xs9/ysC6gPZgKfwQQt6A05jAcbwCW7HzVX19lxgg4AqyZIke5KsSvJKkkeTLOzzWZ/kjSQrk+xOsqWX5HxBxtpzawu+I8nWvvHxvvfJJK+2ZF4aBTToZ4/OtTiOVVX1ZZLXkmyuqqkkE0ne0a3TIazB+SQTw6gbVea/uA5Hm8RfxvZW0Y14HnfiR1zb/BcNC7ZgBNAlLNcpDHZgf1VN4WCSp7Ef97Y44zqhzBuot9N/bRn/XlVJsg/PJjmMW/BZVZ1MMtESOllVF5KMt2Sm2SzqmqwL32AS25Lc1Lj/XEfTgao6lGRSJ/tN+KLNG7hGw6irqjqdZKWOkt1JjuMMTmBDknt0XWIp1uF8q3zg3pz1s2+zvog/dcpbi2taYhcbeOEk/sIRPIy3qupIkprZbKdR1weyHYexD3/jw0bJPw2gsBAf44cG9D52tr44q4BpQA1kKZ7R7Y912IgVWKITyrd4V9f3NjTq7sAx3I0tLc54f+z/gfoGHmiZrsEeHNTJdgzf6dbpekzgfPv3BHbhzQbKZfViuhj6D7RF+KNVsk13JBzD+kbhpuY7hZ1YhbMur98sm8Zln2Ieb8CH8Qh+ab6L++acaQkd1YllP+7C3qo6PkgQQy3JmiTP9X0vSrIsyZIZfruS3D8q1sBel2Q8ycKq+hnLk2yEqrpQVWeq6lyv+iTr8SkeSrK6HTGzVDdww7YO3esQe/FCko9063AfDlbVV0ke06nyhI7KoZt2rjtDtYkrdcqawgHcpjttz1XV670Dsaoujoo30oa1lCQrZo6PujGNrGhGgGm+V3Q3uBqb67430/4D/MK0wfsvrdEAAAAASUVORK5CYII=";
@@ -616,9 +617,17 @@ function RadarScope(props) {
 }
 
 function RocketCanvas(props) {
-  var roll=props.roll, pitch=props.pitch, yaw=props.yaw;
+  var q=props.quat||[1,0,0,0];
+  var qw=q[0],qx=q[1],qy=q[2],qz=q[3];
   var T=useTheme();
   var ref=useRef(null);
+  // Compute Euler angles from quaternion for display (ZYX decomposition)
+  // Body frame: +Z=nose, +Y=starboard, +X=completion (ORIENTATION_SPEC.md §1.2)
+  // euler_x (about X) = lateral tilt, euler_y (about Y) = pitch, euler_z (about Z) = roll
+  var R2D=180/Math.PI;
+  var euler_x=Math.atan2(2*(qw*qx+qy*qz),1-2*(qx*qx+qy*qy))*R2D;
+  var euler_y=Math.asin(Math.max(-1,Math.min(1,2*(qw*qy-qz*qx))))*R2D;
+  var euler_z=Math.atan2(2*(qw*qz+qx*qy),1-2*(qy*qy+qz*qz))*R2D;
   useEffect(function(){
     var cv=ref.current; if(!cv)return;
     var ctx=cv.getContext("2d");
@@ -626,12 +635,20 @@ function RocketCanvas(props) {
     var W=cv.clientWidth, H=cv.clientHeight;
     cv.width=W*dpr; cv.height=H*dpr; ctx.scale(dpr,dpr);
     var cx=W/2, cy=H/2, sc=55;
-    var dr=function(d){return d*Math.PI/180;};
-    var rr=dr(roll), pp=dr(pitch-90), yy=dr(yaw);
-    var rY=function(p,a){var c=Math.cos(a),s=Math.sin(a);return[p[0]*c+p[2]*s,p[1],-p[0]*s+p[2]*c];};
-    var rX=function(p,a){var c=Math.cos(a),s=Math.sin(a);return[p[0],p[1]*c-p[2]*s,p[1]*s+p[2]*c];};
-    var rZ=function(p,a){var c=Math.cos(a),s=Math.sin(a);return[p[0]*c-p[1]*s,p[0]*s+p[1]*c,p[2]];};
-    var xf=function(p){return rZ(rX(rY(p,yy),pp),rr);};
+    // Body-to-NED rotation matrix from quaternion (ORIENTATION_SPEC.md §3.2)
+    var r00=1-2*(qy*qy+qz*qz),r01=2*(qx*qy-qw*qz),r02=2*(qx*qz+qw*qy);
+    var r10=2*(qx*qy+qw*qz),r11=1-2*(qx*qx+qz*qz),r12=2*(qy*qz-qw*qx);
+    var r20=2*(qx*qz-qw*qy),r21=2*(qy*qz+qw*qx),r22=1-2*(qx*qx+qy*qy);
+    // Transform: model coords (Y=nose) → body frame → NED → screen
+    // The FC's attitude init treats az=+g as "Z aligned with gravity (down)",
+    // so the pad quaternion is near-identity even though body Z (nose) is UP.
+    // Model +Y (nose up) maps to body -Z to compensate for this convention.
+    // NED-to-screen: X=NED_Y (East→right), Y=-NED_Z (Up→up), Z=NED_X (North→depth)
+    var xf=function(p){
+      var bx=p[0],by=p[2],bz=-p[1];
+      var nx=r00*bx+r01*by+r02*bz,ny=r10*bx+r11*by+r12*bz,nz=r20*bx+r21*by+r22*bz;
+      return[ny,-nz,nx];
+    };
     var pj=function(p){var d2=5,f=d2/(d2-p[2]*0.3);return[cx+p[0]*sc*f,cy-p[1]*sc*f];};
     var pt=function(p){return pj(xf(p));};
     ctx.clearRect(0,0,W,H);
@@ -649,13 +666,13 @@ function RocketCanvas(props) {
     var bodyCol=T.name==="dark"?"#8899bb":"#556688";
     // Fill
     ctx.fillStyle=bodyCol;ctx.globalAlpha=0.12;ctx.beginPath();
-    topR.forEach(function(p,ii){var q=pt(p);if(ii===0)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);});
+    topR.forEach(function(p,ii){var qq=pt(p);if(ii===0)ctx.moveTo(qq[0],qq[1]);else ctx.lineTo(qq[0],qq[1]);});
     var botRev=[...botR].reverse();
-    botRev.forEach(function(p){var q=pt(p);ctx.lineTo(q[0],q[1]);});
+    botRev.forEach(function(p){var qq=pt(p);ctx.lineTo(qq[0],qq[1]);});
     ctx.fill();ctx.globalAlpha=1;
     // Wireframe
     ctx.strokeStyle=bodyCol;ctx.lineWidth=1;
-    [topR,botR].forEach(function(r){ctx.beginPath();r.forEach(function(p,ii){var q=pt(p);if(ii===0)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);});var q=pt(r[0]);ctx.lineTo(q[0],q[1]);ctx.stroke();});
+    [topR,botR].forEach(function(r){ctx.beginPath();r.forEach(function(p,ii){var qq=pt(p);if(ii===0)ctx.moveTo(qq[0],qq[1]);else ctx.lineTo(qq[0],qq[1]);});var qq=pt(r[0]);ctx.lineTo(qq[0],qq[1]);ctx.stroke();});
     for(var ii=0;ii<segs;ii+=2){var aa=pt(topR[ii]),bb=pt(botR[ii]);ctx.beginPath();ctx.moveTo(aa[0],aa[1]);ctx.lineTo(bb[0],bb[1]);ctx.stroke();}
     // Nose
     ctx.strokeStyle=T.name==="dark"?"#ee5533":"#cc3311";ctx.lineWidth=1.2;
@@ -664,12 +681,12 @@ function RocketCanvas(props) {
     // Fins
     ctx.strokeStyle=T.name==="dark"?"#55bb88":"#338866";ctx.lineWidth=1.5;
     for(var fi=0;fi<4;fi++){var fa=(fi/4)*Math.PI*2,fco=Math.cos(fa),fsi=Math.sin(fa);var f1=pt([fco*br2,-0.6,fsi*br2]),f2=pt([fco*0.35,-1.1,fsi*0.35]),f3=pt([fco*br2,-1.1,fsi*br2]);ctx.beginPath();ctx.moveTo(f1[0],f1[1]);ctx.lineTo(f2[0],f2[1]);ctx.lineTo(f3[0],f3[1]);ctx.closePath();ctx.stroke();}
-  },[roll,pitch,yaw,T.name]);
+  },[qw,qx,qy,qz,T.name]);
   return (
     <div style={{position:"relative",width:"100%",height:"100%",minHeight:200}}>
       <canvas ref={ref} style={{width:"100%",height:"100%",minHeight:200,display:"block"}}/>
       <div style={{position:"absolute",bottom:6,left:8,fontFamily:MONO,fontSize:9,color:T.muted,background:T.bgPanel+"dd",padding:"3px 8px",borderRadius:3}}>
-        <span style={{color:"#ff6655"}}>{"φ "+roll.toFixed(1)+"°"}</span>{"  "}<span style={{color:"#55ee88"}}>{"θ "+pitch.toFixed(1)+"°"}</span>{"  "}<span style={{color:"#5588ff"}}>{"ψ "+yaw.toFixed(1)+"°"}</span>
+        <span style={{color:"#ff6655"}}>{"Roll "+euler_z.toFixed(1)+"°"}</span>{"  "}<span style={{color:"#55ee88"}}>{"Pitch "+euler_y.toFixed(1)+"°"}</span>{"  "}<span style={{color:"#5588ff"}}>{"Tilt "+euler_x.toFixed(1)+"°"}</span>
       </div>
     </div>
   );
@@ -889,8 +906,9 @@ export default function CasperMC() {
   var [tab,setTab] = useState("setup");
   var serial = useSerial();
   var cac = useCommand();
-  var [fcConn,setFcConn] = useState(false); // USB to flight computer (setup only)
+  var fcConn = serial.fc_connected; // USB to flight computer
   var gsConn = serial.gs_connected; // GS connection state from serial hook
+  var connected = fcConn || gsConn; // Either link active — show telemetry data
   var [flightActive,setFlightActive] = useState(false); // True after terminal count
   var [checklistOpen,setChecklistOpen] = useState(false); // Expandable checklist overlay
   var [padPos,setPadPos] = useState({lat:51.50741,lon:-0.12784});
@@ -912,30 +930,35 @@ export default function CasperMC() {
   // Checklist state (shared between overlay and mini display)
   var [overrides, setOverrides] = useState({});
   var [checkCfg, setCheckCfg] = useState({ minBatt: "7.4", minIntegrity: "90" });
+  var [testMode, setTestMode] = useState(false);
+  var [testModeExpiry, setTestModeExpiry] = useState(null);
 
-  // Auto-connect to FC when on setup tab
+  // Auto-expire test mode after 55s (FC times out at 60s)
   useEffect(function(){
-    if(tab==="setup"){
-      var t=setTimeout(function(){setFcConn(true);},800);
-      return function(){clearTimeout(t);};
-    }
-  },[tab]);
+    if(!testMode||!testModeExpiry) return;
+    var remaining = testModeExpiry - Date.now();
+    if(remaining<=0){setTestMode(false);setTestModeExpiry(null);return;}
+    var timer = setTimeout(function(){setTestMode(false);setTestModeExpiry(null);},remaining);
+    return function(){clearTimeout(timer);};
+  },[testMode,testModeExpiry]);
+
+  // Auto-scan serial ports on mount
   useEffect(function(){
-    if(tab!=="setup") setFcConn(false);
-  },[tab]);
+    serial.scan();
+  },[]);
 
   useEffect(function(){
-    if(!gsConn)return;
+    if(!connected)return;
     setAltH(function(p){return p.slice(-150).concat([sim.alt]);});
     setVelH(function(p){return p.slice(-150).concat([sim.vel]);});
     setQbarH(function(p){return p.slice(-150).concat([sim.qbar]);});
     setIntH(function(p){return p.slice(-150).concat([sim.integrity]);});
-  },[sim.alt,gsConn]);
+  },[sim.alt,connected]);
 
   // Flight state TTS callouts
   var prevStateRef = useRef("PAD");
   useEffect(function(){
-    if(!flightActive||!gsConn) return;
+    if(!flightActive||!connected) return;
     var prev = prevStateRef.current;
     var cur = sim.state;
     if(prev===cur) return;
@@ -960,14 +983,14 @@ export default function CasperMC() {
       toneChime();
       setTimeout(function(){speak("The rocket has landed.");},300);
     }
-  },[sim.state,flightActive,gsConn]);
+  },[sim.state,flightActive,connected]);
 
   var m2ft=function(v){return v*3.28084;};
   var altVal=function(v){return imperial?m2ft(v):v;};
   var altU=imperial?"ft":"m";
   var velVal=function(v){return imperial?m2ft(v):v;};
   var velU=imperial?"ft/s":"m/s";
-  var tabs=[{id:"setup",label:"SETUP",icon:"⚙"},{id:"flight",label:"FLIGHT",icon:"▲"},{id:"tracking",label:"TRACK",icon:"◎"}];
+  var tabs=[{id:"setup",label:"SETUP",icon:"⚙"},{id:"test",label:"TEST",icon:"⚡"},{id:"flight",label:"FLIGHT",icon:"▲"},{id:"tracking",label:"TRACK",icon:"◎"}];
 
   var onLaunch = function(){
     setFlightActive(true);
@@ -980,7 +1003,7 @@ export default function CasperMC() {
 
   // Checklist evaluation
   var checkResults = CHECKS.map(function(c) {
-    var pass = gsConn && c.evalFn(sim, checkCfg);
+    var pass = connected && c.evalFn(sim, checkCfg);
     var overridden = overrides[c.id] || false;
     return { ...c, pass: pass, overridden: overridden, status: pass ? "GO" : (overridden ? "OVRD" : "NO-GO") };
   });
@@ -1029,7 +1052,7 @@ export default function CasperMC() {
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <button onClick={function(){setMode(function(m){return m==="dark"?"light":"dark";});}} style={{fontFamily:MONO,fontSize:10,padding:"4px 10px",borderRadius:3,border:"1px solid "+T.border,background:T.bgPanel,color:T.text,cursor:"pointer",fontWeight:600}}>{mode==="dark"?"☀":"●"}</button>
             <button onClick={function(){setImperial(!imperial);}} style={{fontFamily:MONO,fontSize:10,padding:"4px 10px",borderRadius:3,border:"1px solid "+T.border,background:T.bgPanel,color:T.accent,cursor:"pointer",fontWeight:700}}>{imperial?"FT":"M"}</button>
-            <Btn primary onClick={function(){if(gsConn){serial.disconnect_gs();setFlightActive(false);setAltH([]);setVelH([]);setQbarH([]);setIntH([]);}else{serial.scan();serial.connect_gs();}}}>{gsConn?"GS DISCONNECT":"GS CONNECT"}</Btn>
+            <Btn primary onClick={function(){if(gsConn){serial.disconnect_gs();setFlightActive(false);setAltH([]);setVelH([]);setQbarH([]);setIntH([]);}else{serial.scan();setTab("setup");}}}>{gsConn?"GS DISCONNECT":"GS CONNECT"}</Btn>
           </div>
         </div>
 
@@ -1067,6 +1090,7 @@ export default function CasperMC() {
                     <Btn>DEFAULTS</Btn><Btn>EXPORT</Btn><Btn primary disabled={!fcConn} onClick={handleUpload}>{uploadDone?"✓ UPLOADED":"▲ UPLOAD TO FC"}</Btn>
                   </div>
                 </div>
+                <div style={{marginBottom:16}}><SerialPortPicker serial={serial} theme={T}/></div>
                 <DiagTab conn={fcConn}/>
                 <div style={{marginTop:20}}>
                   <div style={{fontFamily:COND,fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Pyro Channel Configuration</div>
@@ -1086,6 +1110,91 @@ export default function CasperMC() {
               </div>
             )}
 
+            {/* ===== TEST TAB ===== */}
+            {tab==="test"&&(
+              <div style={{animation:"fadeUp 0.18s ease-out",maxWidth:1400,margin:"0 auto"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                  <div>
+                    <h2 style={{fontFamily:SANS,fontSize:18,fontWeight:700,color:T.strong,marginBottom:2}}>Bench Test</h2>
+                    <span style={{fontFamily:MONO,fontSize:10,color:connected?"#38bdf8":T.muted}}>{connected?"● Connected to Flight Computer":"Connect FC via Setup tab first"}</span>
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <Btn onClick={function(){if(!window.casper)return;if(testMode){window.casper.cmd_exit_test_mode();setTestMode(false);setTestModeExpiry(null);}else{window.casper.cmd_enter_test_mode();setTestMode(true);setTestModeExpiry(Date.now()+55000);}}} disabled={!fcConn} style={testMode?{background:T.warn,color:"#000",borderColor:T.warn}:undefined}>{testMode?"TEST MODE \u25cf ON":"TEST MODE"}</Btn>
+                    <Btn onClick={function(){if(window.casper)window.casper.cmd_sim_flight()}} disabled={!fcConn}>SIM FLIGHT</Btn>
+                  </div>
+                </div>
+
+                {/* Live telemetry summary */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:16}}>
+                  <Panel title="State">
+                    <div style={{fontFamily:MONO,fontSize:16,fontWeight:700,color:connected?T.accent:T.muted}}>{connected?sim.state:"---"}</div>
+                  </Panel>
+                  <Panel title="EKF Altitude">
+                    <div style={{fontFamily:MONO,fontSize:16,fontWeight:700,color:T.strong}}>{connected?altVal(sim.ekfAlt).toFixed(1):"---"}<span style={{fontSize:10,fontWeight:500,color:T.muted,marginLeft:3}}>{altU}</span></div>
+                  </Panel>
+                  <Panel title="Velocity">
+                    <div style={{fontFamily:MONO,fontSize:16,fontWeight:700,color:T.strong}}>{connected?velVal(sim.vel).toFixed(1):"---"}<span style={{fontSize:10,fontWeight:500,color:T.muted,marginLeft:3}}>{velU}</span></div>
+                  </Panel>
+                  <Panel title="Battery">
+                    <div style={{fontFamily:MONO,fontSize:16,fontWeight:700,color:connected?(sim.batt<7.2?T.danger:sim.batt<7.6?T.warn:T.strong):T.muted}}>{connected?sim.batt.toFixed(2)+" V":"---"}</div>
+                  </Panel>
+                </div>
+
+                {/* Pyro channels — arm/disarm/fire controls */}
+                <div style={{fontFamily:COND,fontSize:11,fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Pyro Channel Control</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  {sim.pyro.map(function(p,i){
+                    return <Panel key={p.hwCh} title={"CH "+p.hwCh+" — "+p.role}>
+                      <div style={{display:"flex",alignItems:"center",gap:12,marginTop:4}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flex:1}}>
+                          <span style={{width:10,height:10,borderRadius:"50%",background:p.cont?T.accent:T.danger,boxShadow:p.cont?T.glow(T.accent):"none"}}/>
+                          <span style={{fontFamily:MONO,fontSize:10,color:p.cont?T.accent:T.danger}}>{p.cont?"CONT OK":"NO CONT"}</span>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontFamily:MONO,fontSize:10,fontWeight:700,color:p.armed?T.warn:T.muted}}>{p.armed?"ARMED":"SAFE"}</span>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:8,marginTop:10}}>
+                        <button onClick={function(){sim.toggleArm(i);}} disabled={!connected} style={{
+                          flex:1,fontFamily:MONO,fontSize:11,fontWeight:700,padding:"8px 0",borderRadius:4,cursor:connected?"pointer":"not-allowed",
+                          border:"1px solid "+(p.armed?T.accent+"66":T.warn+"66"),
+                          background:p.armed?T.accent+"15":T.warn+"15",
+                          color:p.armed?T.accent:T.warn,
+                          opacity:connected?1:0.4
+                        }}>{p.armed?"DISARM":"ARM"}</button>
+                        <button onClick={function(){sim.firePyro(i);}} disabled={!connected||!p.armed} style={{
+                          flex:1,fontFamily:MONO,fontSize:11,fontWeight:700,padding:"8px 0",borderRadius:4,cursor:(connected&&p.armed)?"pointer":"not-allowed",
+                          border:"1px solid "+T.danger+"66",
+                          background:p.firing?T.danger:T.danger+"15",
+                          color:p.firing?"#fff":T.danger,
+                          opacity:(connected&&p.armed)?1:0.4
+                        }}>FIRE</button>
+                      </div>
+                    </Panel>;
+                  })}
+                </div>
+
+                {/* CAC status */}
+                {cac.busy&&<div style={{marginTop:16}}>
+                  <Panel title="CAC Exchange" accentColor={T.warn}>
+                    <div style={{fontFamily:MONO,fontSize:11,color:T.warn}}>
+                      {cac.command_type?cac.command_type.toUpperCase()+" CH"+(cac.target_channel||"?"):"Processing..."}
+                      {cac.retry_count>0?" · Retry "+cac.retry_count:""}
+                    </div>
+                    <button onClick={function(){if(window.casper)window.casper.cmd_abort();}} style={{
+                      marginTop:8,fontFamily:MONO,fontSize:10,fontWeight:700,padding:"6px 16px",borderRadius:4,cursor:"pointer",
+                      border:"1px solid "+T.danger+"66",background:T.danger+"15",color:T.danger
+                    }}>ABORT</button>
+                  </Panel>
+                </div>}
+                {cac.error&&<div style={{marginTop:8}}>
+                  <Panel title="CAC Error" accentColor={T.danger}>
+                    <div style={{fontFamily:MONO,fontSize:10,color:T.danger}}>{cac.error}</div>
+                  </Panel>
+                </div>}
+              </div>
+            )}
+
             {/* ===== FLIGHT TAB ===== */}
             {tab==="flight"&&(
               <div style={{animation:"fadeUp 0.18s ease-out",display:"flex",gap:12,maxWidth:1400,margin:"0 auto"}}>
@@ -1096,20 +1205,20 @@ export default function CasperMC() {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1.3fr 1fr 0.8fr",gap:10}}>
                     <Panel title="GPS" style={{cursor:"pointer"}}>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
-                        <Dot status={gsConn&&sim.gpsFix==="3D"?"ok":gsConn?"warn":"fail"}/>
-                        <span style={{fontFamily:MONO,fontSize:13,fontWeight:700,color:gsConn?(sim.gpsFix==="3D"?T.accent:T.warn):T.muted}}>{gsConn?sim.gpsFix+" · "+sim.gpsSats+" sats":"---"}</span>
+                        <Dot status={connected&&sim.gpsFix==="3D"?"ok":connected?"warn":"fail"}/>
+                        <span style={{fontFamily:MONO,fontSize:13,fontWeight:700,color:connected?(sim.gpsFix==="3D"?T.accent:T.warn):T.muted}}>{connected?sim.gpsFix+" · "+sim.gpsSats+" sats":"---"}</span>
                       </div>
-                      <div style={{fontFamily:MONO,fontSize:10,color:T.text,marginTop:2}}>{gsConn?sim.gpsLat.toFixed(5)+"°N  "+Math.abs(sim.gpsLon).toFixed(5)+"°W":""}</div>
+                      <div style={{fontFamily:MONO,fontSize:10,color:T.text,marginTop:2}}>{connected?sim.gpsLat.toFixed(5)+"°N  "+Math.abs(sim.gpsLon).toFixed(5)+"°W":""}</div>
                     </Panel>
                     <Panel title="EKF Altitude">
-                      <div style={{fontFamily:MONO,fontSize:22,fontWeight:700,color:T.strong}}>{gsConn?altVal(sim.ekfAlt).toFixed(1):"---"}<span style={{fontSize:10,fontWeight:500,color:T.muted,marginLeft:3}}>{altU}</span></div>
+                      <div style={{fontFamily:MONO,fontSize:22,fontWeight:700,color:T.strong}}>{connected?altVal(sim.ekfAlt).toFixed(1):"---"}<span style={{fontSize:10,fontWeight:500,color:T.muted,marginLeft:3}}>{altU}</span></div>
                     </Panel>
                     <Panel title="Radio Link" accentColor={sim.stale?T.warn:undefined} style={{cursor:"pointer"}}>
-                      <div style={{fontFamily:MONO,fontSize:16,fontWeight:700,color:gsConn?(sim.stale?T.warn:sim.dataAge>500?T.danger:sim.dataAge>200?T.warn:T.strong):T.muted}}>{gsConn?(sim.stale?"STALE! "+sim.staleSince.toFixed(1)+"s":sim.dataAge+" ms"):"---"}</div>
-                      <div style={{fontFamily:MONO,fontSize:9,marginTop:2,color:sim.stale?T.warn:T.muted}}>{gsConn?(sim.stale?"Zero-order hold":sim.rssi.toFixed(0)+" dBm"):""}</div>
+                      <div style={{fontFamily:MONO,fontSize:16,fontWeight:700,color:connected?(sim.stale?T.warn:sim.dataAge>500?T.danger:sim.dataAge>200?T.warn:T.strong):T.muted}}>{connected?(sim.stale?"STALE! "+sim.staleSince.toFixed(1)+"s":sim.dataAge+" ms"):"---"}</div>
+                      <div style={{fontFamily:MONO,fontSize:9,marginTop:2,color:sim.stale?T.warn:T.muted}}>{connected?(sim.stale?"Zero-order hold":sim.rssi.toFixed(0)+" dBm"):""}</div>
                     </Panel>
                     <Panel title="Battery">
-                      <div style={{fontFamily:MONO,fontSize:16,fontWeight:700,color:gsConn?(sim.batt<7.2?T.danger:sim.batt<7.6?T.warn:T.strong):T.muted}}>{gsConn?sim.batt.toFixed(2)+" V":"---"}</div>
+                      <div style={{fontFamily:MONO,fontSize:16,fontWeight:700,color:connected?(sim.batt<7.2?T.danger:sim.batt<7.6?T.warn:T.strong):T.muted}}>{connected?sim.batt.toFixed(2)+" V":"---"}</div>
                     </Panel>
                   </div>
 
@@ -1128,7 +1237,7 @@ export default function CasperMC() {
                     {/* Center column: clickable pre-flight summary + terminal count */}
                     <div style={{display:"flex",flexDirection:"column",gap:8,width:200}}>
                       <div onClick={function(){if(!flightActive)setChecklistOpen(true);}} style={{cursor:flightActive?"default":"pointer"}}>
-                        <Panel title="Pre-Flight" accentColor={allGo?T.accent:gsConn?T.warn:undefined}>
+                        <Panel title="Pre-Flight" accentColor={allGo?T.accent:connected?T.warn:undefined}>
                           <div style={{display:"flex",flexDirection:"column",gap:4}}>
                             {checkResults.map(function(r){
                               return <div key={r.id} style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1140,7 +1249,7 @@ export default function CasperMC() {
                           {!flightActive&&<div style={{fontFamily:MONO,fontSize:7,color:T.muted,textAlign:"center",marginTop:6,opacity:0.6}}>Click to expand</div>}
                         </Panel>
                       </div>
-                      <MiniTerminalCount sim={sim} conn={gsConn} allGo={allGo} onLaunch={onLaunch}/>
+                      <MiniTerminalCount sim={sim} conn={connected} allGo={allGo} onLaunch={onLaunch}/>
                     </div>
 
                     <Panel title="Velocity"><Graph data={velH.map(function(v2){return velVal(v2);})} color={T.info} h={280} unit={velU} stale={sim.stale}/></Panel>
@@ -1149,13 +1258,13 @@ export default function CasperMC() {
                   {/* Bottom row: q̄ + 3D orientation */}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                     <Panel title="Dynamic Pressure (q̄)"><Graph data={qbarH.map(function(v2){return v2/1000;})} color={T.warn} h={140} unit="kPa" stale={sim.stale}/></Panel>
-                    <Panel title="3D Orientation" style={{overflow:"hidden"}}><div style={{margin:"-10px -12px"}}><RocketCanvas roll={sim.roll} pitch={sim.pitch} yaw={sim.yaw}/></div></Panel>
+                    <Panel title="3D Orientation" style={{overflow:"hidden"}}><div style={{margin:"-10px -12px"}}><RocketCanvas quat={sim.quat}/></div></Panel>
                   </div>
                 </div>
 
                 {/* RIGHT: vertical flight state bar */}
                 <div style={{width:56,flexShrink:0}}>
-                  <VerticalStateBar current={gsConn?sim.state:"PAD"} timeline={timeline}/>
+                  <VerticalStateBar current={connected?sim.state:"PAD"} timeline={timeline}/>
                 </div>
               </div>
             )}
@@ -1170,8 +1279,8 @@ export default function CasperMC() {
                   </div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="3D Orientation" style={{overflow:"hidden"}}><div style={{margin:"-10px -12px",minHeight:350}}><RocketCanvas roll={sim.roll} pitch={sim.pitch} yaw={sim.yaw}/></div></Panel>
-                  <Panel title="Ground Track" style={{overflow:"hidden"}}><div style={{margin:"-10px -12px",minHeight:350}}><RadarScope rocketLat={sim.gpsLat} rocketLon={sim.gpsLon} padLat={padPos.lat} padLon={padPos.lon} connected={gsConn}/></div></Panel>
+                  <Panel title="3D Orientation" style={{overflow:"hidden"}}><div style={{margin:"-10px -12px",minHeight:350}}><RocketCanvas quat={sim.quat}/></div></Panel>
+                  <Panel title="Ground Track" style={{overflow:"hidden"}}><div style={{margin:"-10px -12px",minHeight:350}}><RadarScope rocketLat={sim.gpsLat} rocketLon={sim.gpsLon} padLat={padPos.lat} padLon={padPos.lon} connected={connected}/></div></Panel>
                 </div>
               </div>
             )}

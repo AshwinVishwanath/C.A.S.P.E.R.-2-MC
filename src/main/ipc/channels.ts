@@ -84,3 +84,6 @@ export const CH_RUN_DIAG = 'casper:run-diagnostics';
 
 /** Erase flight log from FC flash. */
 export const CH_ERASE_LOG = 'casper:erase-flight-log';
+
+/** Start a simulated flight on the FC. */
+export const CH_CMD_SIM_FLIGHT = 'casper:cmd-sim-flight';

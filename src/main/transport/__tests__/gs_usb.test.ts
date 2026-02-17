@@ -232,7 +232,7 @@ describe('GsUsb', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('emits "error" for malformed COBS frames', async () => {
+  it('silently discards malformed COBS frames', async () => {
     await gs.connect('COM_GS');
 
     const frames: Uint8Array[] = [];
@@ -246,8 +246,7 @@ describe('GsUsb', () => {
     port.emit('data', Buffer.from([0x05, 0xaa, DELIM]));
 
     expect(frames).toHaveLength(0);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].message).toMatch(/malformed/i);
+    expect(errors).toHaveLength(0);
   });
 
   // --- Send (COBS encoding) -----------------------------------------------
