@@ -61,6 +61,18 @@ export const MSG_ID_CONFIRM = 0xF0;
 /** ABORT — CAC abort. */
 export const MSG_ID_ABORT = 0xF1;
 
+/** CMD_TESTMODE — toggle test mode (PAD state only). */
+export const MSG_ID_CMD_TESTMODE = 0x82;
+
+/** HANDSHAKE — protocol version handshake. */
+export const MSG_ID_HANDSHAKE = 0xC0;
+
+/** SIM_FLIGHT — start simulated flight command. */
+export const MSG_ID_SIM_FLIGHT = 0xD0;
+
+/** Protocol version this MC speaks. */
+export const PROTOCOL_VERSION = 5;
+
 // ---------------------------------------------------------------------------
 // Magic bytes (PRD Section 3.3)
 // ---------------------------------------------------------------------------
@@ -88,21 +100,24 @@ export const STALE_THRESHOLD_MS = 500;
 export const STALE_AUDIO_TRIGGER_MS = 2000;
 
 // ---------------------------------------------------------------------------
-// CRC-32 parameters (STM32 hardware CRC peripheral)
+// CRC-32 parameters (standard CRC-32/ISO-HDLC)
 // ---------------------------------------------------------------------------
 
-/** CRC-32 polynomial (unreflected, same as STM32 hardware CRC). */
-export const CRC32_POLY = 0x04C11DB7;
+/** CRC-32 reflected polynomial (standard CRC-32/ISO-HDLC). */
+export const CRC32_POLY = 0xEDB88320;
 
 /** CRC-32 initial value. */
 export const CRC32_INIT = 0xFFFFFFFF;
+
+/** CRC-32 final XOR value. */
+export const CRC32_XOR_OUT = 0xFFFFFFFF;
 
 // ---------------------------------------------------------------------------
 // Packet sizes in bytes (PRD Section 3.3)
 // ---------------------------------------------------------------------------
 
-/** FC_MSG_FAST payload size (excluding msg_id). Total: 19 bytes. */
-export const SIZE_FC_MSG_FAST = 19;
+/** FC_MSG_FAST payload size. Total: 20 bytes (includes seq byte at offset 15). */
+export const SIZE_FC_MSG_FAST = 20;
 
 /** FC_MSG_GPS payload size. Total: 17 bytes. */
 export const SIZE_FC_MSG_GPS = 17;
@@ -148,8 +163,8 @@ export const RING_BUFFER_DEPTH = 150;
 // Scaling factors (PRD Section 4)
 // ---------------------------------------------------------------------------
 
-/** FC_TLM_ALT scaling: raw * ALT_SCALE = metres. */
-export const ALT_SCALE = 10.0;
+/** FC_TLM_ALT scaling: raw * ALT_SCALE = metres (1 m per LSB). */
+export const ALT_SCALE = 1.0;
 
 /** FC_TLM_VEL scaling: raw * VEL_SCALE = m/s. */
 export const VEL_SCALE = 0.1;

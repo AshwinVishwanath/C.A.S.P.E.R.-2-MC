@@ -60,7 +60,7 @@ describe('Full Pipeline Integration', () => {
 
     const msg = result.message.data;
     expect(msg.crc_ok).toBe(true);
-    expect(msg.alt_m).toBe(1000.0);
+    expect(msg.alt_m).toBe(100.0);
     expect(msg.vel_mps).toBeCloseTo(50.0, 1);
     expect(msg.batt_v).toBeCloseTo(7.2, 2);
     expect(msg.seq).toBe(42);
@@ -79,7 +79,7 @@ describe('Full Pipeline Integration', () => {
     store.update_from_gs_telem(msg);
     const snap = store.get_snapshot();
 
-    expect(snap.alt_m).toBe(1000.0);
+    expect(snap.alt_m).toBe(100.0);
     expect(snap.vel_mps).toBeCloseTo(50.0, 1);
     expect(snap.batt_v).toBeCloseTo(7.2, 2);
     expect(snap.seq).toBe(42);
@@ -229,7 +229,7 @@ describe('Full Pipeline Integration', () => {
     store.update_from_gs_telem(msg);
     const snap = store.get_snapshot();
 
-    expect(snap.alt_m).toBe(1000.0);
+    expect(snap.alt_m).toBe(100.0);
     expect(snap.vel_mps).toBeCloseTo(50.0, 1);
     expect(snap.fsm_state).toBe(FsmState.Boost);
     expect(snap.stale).toBe(false);
@@ -501,7 +501,7 @@ describe('Full Pipeline Integration', () => {
   // -----------------------------------------------------------------------
 
   it('should return error for truncated FC_MSG_FAST', () => {
-    // Only send 5 bytes (need 19)
+    // Only send 5 bytes (need 20)
     const truncated = fixtures.FC_FAST_PAD_IDLE.subarray(0, 5);
     const result = parse_packet(truncated);
     expect(result.ok).toBe(false);

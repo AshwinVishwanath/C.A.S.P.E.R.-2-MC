@@ -20,6 +20,7 @@ import type { FcUsb } from '../transport/fc_usb';
 import type { GsUsb } from '../transport/gs_usb';
 import { scan_ports } from '../transport/port_scanner';
 import { serialise_config, config_hash } from '../protocol/config_serialiser';
+import { build_handshake, build_sim_flight, build_testmode } from '../protocol/command_builder';
 import type { FlightConfig } from '../protocol/types';
 import {
   CH_TELEMETRY,
@@ -42,7 +43,8 @@ import {
   CH_CMD_ENTER_TEST,
   CH_CMD_EXIT_TEST,
   CH_RUN_DIAG,
-  CH_ERASE_LOG
+  CH_ERASE_LOG,
+  CH_CMD_SIM_FLIGHT
 } from './channels';
 
 // ---------------------------------------------------------------------------
@@ -143,6 +145,11 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     try {
       await fc.connect(port);
       store.set_connection('fc', true);
+
+      // Send handshake to validate protocol version
+      const handshake = build_handshake();
+      await fc.send(handshake);
+      // The handshake response will be handled by wire_fc_pipeline when it arrives
     } catch (err) {
       throw new Error(
         `Failed to connect to FC: ${err instanceof Error ? err.message : String(err)}`
@@ -188,8 +195,21 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
   // 5. CAC command handlers (fire-and-forget)
   // -----------------------------------------------------------------------
 
+  /**
+   * Reset the CAC machine if it's stuck (e.g. waiting for an ACK that
+   * never arrived). This lets the operator retry without waiting for
+   * the full 10-second overall timeout.
+   */
+  const reset_cac_if_busy = (): void => {
+    if (cac.is_busy()) {
+      console.warn('[IPC] CAC was busy — resetting for new command');
+      cac.reset();
+    }
+  };
+
   const on_cmd_arm = (_event: Electron.IpcMainEvent, channel: number): void => {
     try {
+      reset_cac_if_busy();
       cac.cmd_arm(channel, true);
     } catch (err) {
       console.error('[IPC] cmd_arm error:', err instanceof Error ? err.message : err);
@@ -199,6 +219,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
 
   const on_cmd_disarm = (_event: Electron.IpcMainEvent, channel: number): void => {
     try {
+      reset_cac_if_busy();
       cac.cmd_arm(channel, false);
     } catch (err) {
       console.error('[IPC] cmd_disarm error:', err instanceof Error ? err.message : err);
@@ -212,6 +233,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     duration_ms: number
   ): void => {
     try {
+      reset_cac_if_busy();
       cac.cmd_fire(channel, duration_ms);
     } catch (err) {
       console.error('[IPC] cmd_fire error:', err instanceof Error ? err.message : err);
@@ -240,14 +262,30 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
   // -----------------------------------------------------------------------
 
   const on_enter_test = (): void => {
-    // TODO: Implement test-mode enter command when FC protocol supports it.
-    console.warn('[IPC] enter-test-mode: not yet implemented');
+    try {
+      const cmd = build_testmode();
+      if (fc.is_connected()) {
+        fc.send(cmd);
+      } else {
+        console.warn('[IPC] enter-test-mode: FC not connected');
+      }
+    } catch (err) {
+      console.error('[IPC] enter-test-mode error:', err instanceof Error ? err.message : err);
+    }
   };
   ipcMain.on(CH_CMD_ENTER_TEST, on_enter_test);
 
   const on_exit_test = (): void => {
-    // TODO: Implement test-mode exit command when FC protocol supports it.
-    console.warn('[IPC] exit-test-mode: not yet implemented');
+    try {
+      const cmd = build_testmode();
+      if (fc.is_connected()) {
+        fc.send(cmd);
+      } else {
+        console.warn('[IPC] exit-test-mode: FC not connected');
+      }
+    } catch (err) {
+      console.error('[IPC] exit-test-mode error:', err instanceof Error ? err.message : err);
+    }
   };
   ipcMain.on(CH_CMD_EXIT_TEST, on_exit_test);
 
@@ -322,6 +360,22 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
   ipcMain.on(CH_ERASE_LOG, on_erase_log);
 
   // -----------------------------------------------------------------------
+  // 10. Simulated flight (fire-and-forget)
+  // -----------------------------------------------------------------------
+
+  const on_sim_flight = (): void => {
+    try {
+      const cmd = build_sim_flight();
+      if (fc.is_connected()) {
+        fc.send(cmd);
+      }
+    } catch (err) {
+      console.error('[IPC] sim_flight error:', err);
+    }
+  };
+  ipcMain.on(CH_CMD_SIM_FLIGHT, on_sim_flight);
+
+  // -----------------------------------------------------------------------
   // Cleanup function
   // -----------------------------------------------------------------------
 
@@ -350,5 +404,6 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeListener(CH_CMD_EXIT_TEST, on_exit_test);
     ipcMain.removeListener(CH_RUN_DIAG, on_run_diag);
     ipcMain.removeListener(CH_ERASE_LOG, on_erase_log);
+    ipcMain.removeListener(CH_CMD_SIM_FLIGHT, on_sim_flight);
   };
 }

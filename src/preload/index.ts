@@ -99,6 +99,10 @@ const casper_api = {
 
   erase_flight_log: (): void => {
     ipcRenderer.send('casper:erase-flight-log')
+  },
+
+  cmd_sim_flight: (): void => {
+    ipcRenderer.send('casper:cmd-sim-flight')
   }
 }
 

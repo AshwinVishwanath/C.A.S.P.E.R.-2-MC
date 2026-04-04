@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "unset ELECTRON_RUN_AS_NODE && electron-vite dev",
+    "dev": "node scripts/dev.js",
     "build": "electron-vite build",
-    "preview": "unset ELECTRON_RUN_AS_NODE && electron-vite preview",
+    "preview": "node scripts/dev.js --preview",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -58,6 +58,11 @@ export class GsUsb extends EventEmitter {
   /** Accumulation buffer for incoming bytes before a delimiter is seen. */
   private rx_buffer: number[] = [];
 
+  /** Saved references for listener cleanup on disconnect. */
+  private _on_data: ((buf: Buffer) => void) | null = null;
+  private _on_error: ((err: Error) => void) | null = null;
+  private _on_close: (() => void) | null = null;
+
   constructor() {
     super();
   }
@@ -84,22 +89,34 @@ export class GsUsb extends EventEmitter {
           autoOpen: false
         });
 
-        port.on('data', (buf: Buffer) => {
+        // Create bound handlers so we can remove them on disconnect.
+        this._on_data = (buf: Buffer) => {
           this.on_serial_data(buf);
-        });
-
-        port.on('error', (err: Error) => {
+        };
+        this._on_error = (err: Error) => {
           this.emit('error', err);
-        });
+        };
+        this._on_close = () => {
+          // Guard: only act if this port is still the active one.
+          // Prevents a stale close event from a previous port from
+          // nuking a newly established connection.
+          if (this.port === port) {
+            this.rx_buffer = [];
+            this.port = null;
+            this.emit('close');
+          }
+        };
 
-        port.on('close', () => {
-          this.rx_buffer = [];
-          this.port = null;
-          this.emit('close');
-        });
+        port.on('data', this._on_data);
+        port.on('error', this._on_error);
+        port.on('close', this._on_close);
 
         port.open((err) => {
           if (err) {
+            port.removeAllListeners();
+            this._on_data = null;
+            this._on_error = null;
+            this._on_close = null;
             this.port = null;
             reject(new Error(`GsUsb: failed to open ${path}: ${err.message}`));
             return;
@@ -129,9 +146,20 @@ export class GsUsb extends EventEmitter {
     if (!this.port) {
       return;
     }
+
+    const old_port = this.port;
+    this.port = null;
+
+    // Remove our listeners before closing so the async 'close' event
+    // from the old port can't interfere with a future connection.
+    old_port.removeAllListeners();
+    this._on_data = null;
+    this._on_error = null;
+    this._on_close = null;
+
     try {
-      if (this.port.isOpen) {
-        this.port.close();
+      if (old_port.isOpen) {
+        old_port.close();
       }
     } catch (err) {
       this.emit(
@@ -141,7 +169,6 @@ export class GsUsb extends EventEmitter {
         )
       );
     }
-    this.port = null;
   }
 
   /**
@@ -199,13 +226,20 @@ export class GsUsb extends EventEmitter {
 
           const decoded = cobs_decode(frame_bytes);
           if (decoded !== null) {
-            this.emit('frame', decoded);
-          } else {
-            this.emit(
-              'error',
-              new Error('GsUsb: malformed COBS frame discarded')
-            );
+            try {
+              this.emit('frame', decoded);
+            } catch (err) {
+              // Don't let a handler error stop processing remaining bytes.
+              this.emit(
+                'error',
+                new Error(
+                  `GsUsb: frame handler error: ${err instanceof Error ? err.message : String(err)}`
+                )
+              );
+            }
           }
+          // Malformed frames are silently discarded — expected on
+          // initial connect when partial data may be on the wire.
         }
         // If rx_buffer was empty, this is a back-to-back delimiter — ignore.
       } else {

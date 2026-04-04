@@ -72,6 +72,7 @@ describe('parse FC_MSG_FAST', () => {
     quat_bytes?: Uint8Array;
     time_raw?: number;
     batt_raw?: number;
+    seq?: number;
     bad_crc?: boolean;
   } = {}): Uint8Array {
     const pkt = new Uint8Array(SIZE_FC_MSG_FAST);
@@ -85,6 +86,7 @@ describe('parse FC_MSG_FAST', () => {
     for (let i = 0; i < 5; i++) pkt[7 + i] = qb[i];
     write_u16(pkt, 12, opts.time_raw ?? 0);
     pkt[14] = opts.batt_raw ?? 0;
+    pkt[15] = opts.seq ?? 0;
     if (!opts.bad_crc) {
       append_crc(pkt);
     }
@@ -93,7 +95,7 @@ describe('parse FC_MSG_FAST', () => {
 
   it('should parse a valid FC_MSG_FAST packet', () => {
     const pkt = build_fast_packet({
-      alt_raw: 100,    // 100 * 10.0 = 1000.0 m
+      alt_raw: 100,    // 100 * 1.0 = 100.0 m
       vel_raw: 500,    // 500 * 0.1 = 50.0 m/s
       time_raw: 300,   // 300 * 0.1 = 30.0 s
       batt_raw: 100    // 6.0 + 100 * 0.012 = 7.2 V
@@ -108,7 +110,7 @@ describe('parse FC_MSG_FAST', () => {
 
     const data = result.message.data;
     expect(data.msg_id).toBe(MSG_ID_FAST);
-    expect(data.alt_m).toBeCloseTo(1000.0, 1);
+    expect(data.alt_m).toBeCloseTo(100.0, 1);
     expect(data.vel_mps).toBeCloseTo(50.0, 1);
     expect(data.flight_time_s).toBeCloseTo(30.0, 1);
     expect(data.batt_v).toBeCloseTo(7.2, 2);
@@ -160,7 +162,7 @@ describe('parse FC_MSG_FAST', () => {
     const result = parse_packet(pkt);
     expect(result.ok).toBe(true);
     if (!result.ok || result.message.type !== 'fc_fast') return;
-    expect(result.message.data.alt_m).toBeCloseTo(65535 * 10.0, 0);
+    expect(result.message.data.alt_m).toBeCloseTo(65535 * 1.0, 0);
   });
 
   it('should handle zero values', () => {
@@ -172,6 +174,14 @@ describe('parse FC_MSG_FAST', () => {
     expect(result.message.data.vel_mps).toBe(0);
     expect(result.message.data.flight_time_s).toBe(0);
     expect(result.message.data.batt_v).toBeCloseTo(6.0, 2);
+  });
+
+  it('should parse seq byte from offset 15', () => {
+    const pkt = build_fast_packet({ seq: 0xEA });
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'fc_fast') return;
+    expect(result.message.data.seq).toBe(0xEA);
   });
 
   it('should reject packet that is too short', () => {

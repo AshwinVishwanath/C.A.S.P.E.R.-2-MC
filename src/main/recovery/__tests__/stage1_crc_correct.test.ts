@@ -39,11 +39,10 @@ function flip_bit(data: Uint8Array, bit_pos: number): Uint8Array {
 // ---------------------------------------------------------------------------
 
 describe('crc32_compute', () => {
-  it('should return CRC_INIT XOR-folded for empty input', () => {
-    // Empty input: zero-length → no words to process. But our implementation
-    // pads to 0 words, so crc stays at 0xFFFFFFFF.
+  it('should return 0x00000000 for empty input', () => {
+    // Empty input: init 0xFFFFFFFF XOR final 0xFFFFFFFF = 0x00000000.
     const crc = crc32_compute(new Uint8Array(0));
-    expect(crc).toBe(0xffffffff);
+    expect(crc).toBe(0x00000000);
   });
 
   it('should produce a deterministic result for known data', () => {
