@@ -22,6 +22,9 @@ import { scan_ports } from '../transport/port_scanner';
 import { serialise_config, config_hash } from '../protocol/config_serialiser';
 import { build_handshake, build_sim_flight, build_testmode } from '../protocol/command_builder';
 import type { FlightConfig } from '../protocol/types';
+import { run_readout, run_erase } from '../readout/readout_orchestrator';
+import { export_all_csv, export_hr_csv, export_lr_csv, export_summary_csv } from '../readout/csv_export';
+import type { ReadoutResult } from '../readout/readout_types';
 import {
   CH_TELEMETRY,
   CH_CAC_UPDATE,
@@ -44,7 +47,9 @@ import {
   CH_CMD_EXIT_TEST,
   CH_RUN_DIAG,
   CH_ERASE_LOG,
-  CH_CMD_SIM_FLIGHT
+  CH_CMD_SIM_FLIGHT,
+  CH_LOG_PROGRESS,
+  CH_EXPORT_LOG_CSV
 } from './channels';
 
 // ---------------------------------------------------------------------------
@@ -100,6 +105,9 @@ function safe_send(window: BrowserWindow, channel: string, ...args: unknown[]): 
  */
 export function register_ipc_handlers(deps: IpcDependencies): () => void {
   const { window, store, cac, fc, gs } = deps;
+
+  /** Holds the last successful readout result for CSV export. */
+  let last_readout: ReadoutResult | null = null;
 
   // -----------------------------------------------------------------------
   // 1. Telemetry subscription — push every snapshot update to renderer
@@ -348,16 +356,75 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
   // -----------------------------------------------------------------------
 
   ipcMain.handle(CH_DOWNLOAD_LOG, async () => {
-    // TODO: Implement flight log download from FC QSPI flash.
-    // Stub: return empty array.
-    return new Uint8Array(0);
+    try {
+      const progress_cb = (p: import('../readout/readout_types').ReadoutProgress) => {
+        safe_send(window, CH_LOG_PROGRESS, p);
+      };
+      const result = await run_readout(fc, progress_cb);
+      last_readout = result;
+      return result;
+    } catch (err) {
+      safe_send(window, CH_LOG_PROGRESS, {
+        phase: 'error',
+        pct: 0,
+        detail: 'Download failed',
+        error: err instanceof Error ? err.message : String(err)
+      });
+      throw new Error(
+        `Flight log download failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   });
 
-  const on_erase_log = (): void => {
-    // TODO: Send flash erase command to FC.
-    console.warn('[IPC] erase-flight-log: not yet implemented');
+  const on_erase_log = async (): Promise<void> => {
+    try {
+      const progress_cb = (p: import('../readout/readout_types').ReadoutProgress) => {
+        safe_send(window, CH_LOG_PROGRESS, p);
+      };
+      await run_erase(fc, progress_cb);
+      last_readout = null;
+    } catch (err) {
+      safe_send(window, CH_LOG_PROGRESS, {
+        phase: 'error',
+        pct: 0,
+        detail: 'Erase failed',
+        error: err instanceof Error ? err.message : String(err)
+      });
+      console.error('[IPC] erase error:', err instanceof Error ? err.message : err);
+    }
   };
   ipcMain.on(CH_ERASE_LOG, on_erase_log);
+
+  // CSV export handler
+  ipcMain.handle(CH_EXPORT_LOG_CSV, async (_event, type: string) => {
+    if (!last_readout) {
+      return { ok: false, error: 'No flight log data — download first' };
+    }
+    try {
+      let saved = false;
+      switch (type) {
+        case 'hr':
+          saved = await export_hr_csv(last_readout.hr_entries, window);
+          break;
+        case 'lr':
+          saved = await export_lr_csv(last_readout.lr_entries, window);
+          break;
+        case 'summary':
+          saved = await export_summary_csv(last_readout.summary_entries, window);
+          break;
+        case 'all':
+        default:
+          saved = await export_all_csv(last_readout, window);
+          break;
+      }
+      return { ok: saved };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `CSV export failed: ${err instanceof Error ? err.message : String(err)}`
+      };
+    }
+  });
 
   // -----------------------------------------------------------------------
   // 10. Simulated flight (fire-and-forget)
@@ -390,6 +457,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeHandler(CH_UPLOAD_CONFIG);
     ipcMain.removeHandler(CH_VERIFY_CONFIG);
     ipcMain.removeHandler(CH_DOWNLOAD_LOG);
+    ipcMain.removeHandler(CH_EXPORT_LOG_CSV);
 
     // Remove fire-and-forget listeners
     ipcMain.removeListener(CH_SCAN_PORTS, on_scan_ports);

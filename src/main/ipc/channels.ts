@@ -26,6 +26,9 @@ export const CH_DIAG_RESULT = 'casper:diag-result';
 /** Serial port list pushed after a scan. */
 export const CH_SERIAL_PORTS = 'casper:serial-ports';
 
+/** Flight log download progress pushed during readout. */
+export const CH_LOG_PROGRESS = 'casper:log-progress';
+
 // ---------------------------------------------------------------------------
 // Renderer -> Main invoke channels (expect return value)
 // ---------------------------------------------------------------------------
@@ -44,6 +47,9 @@ export const CH_VERIFY_CONFIG = 'casper:verify-config-hash';
 
 /** Download flight log from FC flash. Args: none. */
 export const CH_DOWNLOAD_LOG = 'casper:download-flight-log';
+
+/** Export flight log data as CSV files. Args: (type: 'hr' | 'lr' | 'summary' | 'all'). */
+export const CH_EXPORT_LOG_CSV = 'casper:export-log-csv';
 
 // ---------------------------------------------------------------------------
 // Renderer -> Main send channels (fire-and-forget)

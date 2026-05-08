@@ -59,6 +59,20 @@ export class FcUsb extends EventEmitter {
   private _on_error: ((err: Error) => void) | null = null;
   private _on_close: (() => void) | null = null;
 
+  /** Raw-mode state: when true, incoming bytes bypass COBS deframing. */
+  private _raw_mode = false;
+
+  /** Accumulation buffer for raw (non-COBS) incoming bytes. */
+  private _raw_buffer: number[] = [];
+
+  /** Pending read_exact() waiters, served sequentially (FIFO). */
+  private _raw_waiters: Array<{
+    n: number;
+    resolve: (data: Uint8Array) => void;
+    reject: (err: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }> = [];
+
   constructor() {
     super();
   }
@@ -165,6 +179,15 @@ export class FcUsb extends EventEmitter {
         )
       );
     }
+
+    // Reject any pending raw-mode waiters.
+    for (const w of this._raw_waiters) {
+      clearTimeout(w.timer);
+      w.reject(new Error('FcUsb: disconnected during raw read'));
+    }
+    this._raw_waiters = [];
+    this._raw_mode = false;
+    this._raw_buffer = [];
   }
 
   /**
@@ -206,11 +229,93 @@ export class FcUsb extends EventEmitter {
     return this.port !== null && this.port.isOpen;
   }
 
+  // ---- Raw-mode API (for flight-log readout) ----
+
+  /**
+   * Enter raw (non-COBS) mode for flight log readout.
+   * Incoming bytes are buffered raw instead of COBS-decoded.
+   * Must call exit_raw_mode() when done.
+   */
+  enter_raw_mode(): void {
+    this._raw_mode = true;
+    this._raw_buffer = [];
+    this.rx_buffer = [];
+  }
+
+  /**
+   * Exit raw mode and restore normal COBS deframing.
+   * Rejects any pending read_exact() waiters.
+   */
+  exit_raw_mode(): void {
+    this._raw_mode = false;
+    this._raw_buffer = [];
+    // Reject pending waiters
+    for (const waiter of this._raw_waiters) {
+      clearTimeout(waiter.timer);
+      waiter.reject(new Error('FcUsb: raw mode exited with pending read'));
+    }
+    this._raw_waiters = [];
+  }
+
+  /**
+   * Read exactly `n` bytes in raw mode.
+   * Returns a promise that resolves when n bytes are available.
+   * @param n - Number of bytes to read.
+   * @param timeout_ms - Timeout in milliseconds (default 10000).
+   */
+  read_exact(n: number, timeout_ms: number = 10000): Promise<Uint8Array> {
+    if (!this._raw_mode) {
+      return Promise.reject(new Error('FcUsb: read_exact() requires raw mode'));
+    }
+    if (!this.port || !this.port.isOpen) {
+      return Promise.reject(new Error('FcUsb: not connected'));
+    }
+
+    // Check if we already have enough bytes
+    if (this._raw_buffer.length >= n) {
+      const data = new Uint8Array(this._raw_buffer.splice(0, n));
+      return Promise.resolve(data);
+    }
+
+    // Otherwise wait for more data
+    return new Promise<Uint8Array>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        // Remove this waiter
+        const idx = this._raw_waiters.findIndex(w => w.resolve === resolve);
+        if (idx >= 0) this._raw_waiters.splice(idx, 1);
+        reject(new Error(`FcUsb: read_exact(${n}) timed out after ${timeout_ms}ms (got ${this._raw_buffer.length} bytes)`));
+      }, timeout_ms);
+
+      this._raw_waiters.push({ n, resolve, reject, timer });
+    });
+  }
+
+  /**
+   * Send raw bytes without COBS encoding.
+   * Used for readout command bytes in raw mode.
+   * @param data - Raw bytes to send.
+   */
+  send_raw(data: Uint8Array): void {
+    if (!this.port || !this.port.isOpen) {
+      throw new Error('FcUsb: not connected');
+    }
+    this.port.write(Buffer.from(data));
+  }
+
   /**
    * Process incoming serial bytes, accumulating into the frame buffer
    * and emitting decoded frames when a 0x00 delimiter is encountered.
    */
   private on_serial_data(buf: Buffer): void {
+    if (this._raw_mode) {
+      // Raw mode: accumulate bytes and resolve waiters
+      for (let i = 0; i < buf.length; i++) {
+        this._raw_buffer.push(buf[i]);
+      }
+      this._try_resolve_waiters();
+      return;
+    }
+
     for (let i = 0; i < buf.length; i++) {
       const byte = buf[i];
 
@@ -249,6 +354,23 @@ export class FcUsb extends EventEmitter {
             new Error('FcUsb: frame buffer overflow — buffer reset')
           );
         }
+      }
+    }
+  }
+
+  /**
+   * Check if any pending read_exact waiter can be satisfied.
+   */
+  private _try_resolve_waiters(): void {
+    while (this._raw_waiters.length > 0) {
+      const waiter = this._raw_waiters[0];
+      if (this._raw_buffer.length >= waiter.n) {
+        this._raw_waiters.shift();
+        clearTimeout(waiter.timer);
+        const data = new Uint8Array(this._raw_buffer.splice(0, waiter.n));
+        waiter.resolve(data);
+      } else {
+        break; // Not enough data yet
       }
     }
   }

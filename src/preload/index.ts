@@ -93,12 +93,22 @@ const casper_api = {
     ipcRenderer.send('casper:run-diagnostics')
   },
 
-  download_flight_log: (): Promise<Uint8Array> => {
+  download_flight_log: (): Promise<unknown> => {
     return ipcRenderer.invoke('casper:download-flight-log')
   },
 
   erase_flight_log: (): void => {
     ipcRenderer.send('casper:erase-flight-log')
+  },
+
+  on_log_progress: (cb: (progress: unknown) => void): (() => void) => {
+    const handler = (_event: unknown, progress: unknown) => cb(progress)
+    ipcRenderer.on('casper:log-progress', handler)
+    return () => ipcRenderer.removeListener('casper:log-progress', handler)
+  },
+
+  export_flight_log_csv: (type: string): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:export-log-csv', type)
   },
 
   cmd_sim_flight: (): void => {

@@ -3,3 +3,4 @@ dist/
 out/
 package-lock.json
 .claude/
+.vscode/
