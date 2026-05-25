@@ -1,0 +1,61 @@
+/*
+ * CASPER 2 Mission Control v2 — Animation keyframes
+ *
+ * Google Fonts required for design system typography:
+ * Big Shoulders Display, IBM Plex Mono, IBM Plex Sans, IBM Plex Sans Condensed
+ * The @import below loads them from Google Fonts at runtime.
+ * For offline/production, self-host these fonts and remove the @import.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap");
+
+@keyframes cmcPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.55; transform: scale(0.94); }
+}
+
+@keyframes cmcSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes cmcFadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cmcStripeMove {
+  from { background-position: 0 0; }
+  to   { background-position: 22.6px 0; }
+}
+
+@keyframes cmcArmPulse {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(231, 88, 88, 0.55), inset 0 0 12px rgba(0,0,0,0.25);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(231, 88, 88, 0.95), inset 0 0 12px rgba(0,0,0,0.25);
+  }
+}
+
+@keyframes edgeFlow {
+  from { stroke-dashoffset: 10; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* bob — used by the existing App.jsx mascot animation */
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-4px); }
+}
+
+/* fadeUp — used by existing App.jsx */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* pulse — used by existing App.jsx Dot component */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.55; transform: scale(0.94); }
+}

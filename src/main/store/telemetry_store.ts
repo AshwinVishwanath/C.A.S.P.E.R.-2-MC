@@ -10,13 +10,17 @@
 
 import { TelemetrySnapshot, PyroState, EventLogEntry, DEFAULT_SNAPSHOT } from './store_types';
 import { FcMsgFast, FcMsgGps, FcMsgEvent, GsMsgTelem, FcTlmStatus, EventType, FsmState, FSM_STATE_NAMES } from '../protocol/types';
-import { RING_BUFFER_DEPTH, STALE_THRESHOLD_MS } from '../protocol/constants';
+import { RING_BUFFER_DEPTH, STALE_THRESHOLD_MS, EULER_EMA_ALPHA } from '../protocol/constants';
 import { quat_to_euler_deg } from '../protocol/derived';
 
 export class TelemetryStore {
   private snapshot: TelemetrySnapshot;
   private subscribers: Set<(s: TelemetrySnapshot) => void> = new Set();
   private last_valid_ms: number = 0;
+  private euler_initialised: boolean = false;
+  private prev_roll: number = 0;
+  private prev_pitch: number = 0;
+  private prev_yaw: number = 0;
 
   constructor() {
     // Deep clone DEFAULT_SNAPSHOT to avoid shared state
@@ -76,9 +80,10 @@ export class TelemetryStore {
     s.recovery_confidence = parsed.recovery.confidence;
     s.mach = parsed.mach;
     s.qbar_pa = parsed.qbar_pa;
-    s.roll_deg = parsed.roll_deg;
-    s.pitch_deg = parsed.pitch_deg;
-    s.yaw_deg = parsed.yaw_deg;
+    const [froll, fpitch, fyaw] = this._filter_euler(parsed.roll_deg, parsed.pitch_deg, parsed.yaw_deg);
+    s.roll_deg = froll;
+    s.pitch_deg = fpitch;
+    s.yaw_deg = fyaw;
     // Ring buffers
     this._push_ring(s.buf_alt, s.alt_m);
     this._push_ring(s.buf_vel, s.vel_mps);
@@ -109,9 +114,10 @@ export class TelemetryStore {
     s.sys_error = parsed.status.error;
     // Compute Euler angles from quaternion (not provided by FC direct mode)
     const [roll, pitch, yaw] = quat_to_euler_deg(parsed.quat);
-    s.roll_deg = roll;
-    s.pitch_deg = pitch;
-    s.yaw_deg = yaw;
+    const [froll, fpitch, fyaw] = this._filter_euler(roll, pitch, yaw);
+    s.roll_deg = froll;
+    s.pitch_deg = fpitch;
+    s.yaw_deg = fyaw;
     // Ring buffers
     this._push_ring(s.buf_alt, s.alt_m);
     this._push_ring(s.buf_vel, s.vel_mps);
@@ -183,6 +189,7 @@ export class TelemetryStore {
       this.snapshot.events = events;
       this.snapshot.fc_conn = fc_conn;
       this.snapshot.gs_conn = gs_conn;
+      this.euler_initialised = false;
     }
     this._notify();
   }
@@ -229,6 +236,7 @@ export class TelemetryStore {
   reset(): void {
     this.snapshot = JSON.parse(JSON.stringify(DEFAULT_SNAPSHOT));
     this.last_valid_ms = 0;
+    this.euler_initialised = false;
     this._notify();
   }
 
@@ -246,6 +254,34 @@ export class TelemetryStore {
     if (buf.length > RING_BUFFER_DEPTH) {
       buf.shift();
     }
+  }
+
+  /**
+   * Apply EMA low-pass filter to euler angles, handling yaw wraparound.
+   */
+  private _filter_euler(roll: number, pitch: number, yaw: number): [number, number, number] {
+    if (!this.euler_initialised) {
+      this.prev_roll = roll;
+      this.prev_pitch = pitch;
+      this.prev_yaw = yaw;
+      this.euler_initialised = true;
+      return [roll, pitch, yaw];
+    }
+
+    const a = EULER_EMA_ALPHA;
+    this.prev_roll = a * roll + (1 - a) * this.prev_roll;
+    this.prev_pitch = a * pitch + (1 - a) * this.prev_pitch;
+
+    // Handle yaw wraparound (-180/+180 boundary)
+    let dyaw = yaw - this.prev_yaw;
+    if (dyaw > 180) dyaw -= 360;
+    if (dyaw < -180) dyaw += 360;
+    this.prev_yaw = this.prev_yaw + a * dyaw;
+    // Normalise back to [-180, 180]
+    if (this.prev_yaw > 180) this.prev_yaw -= 360;
+    if (this.prev_yaw < -180) this.prev_yaw += 360;
+
+    return [this.prev_roll, this.prev_pitch, this.prev_yaw];
   }
 
   private _update_pyro_from_status(status: FcTlmStatus): void {

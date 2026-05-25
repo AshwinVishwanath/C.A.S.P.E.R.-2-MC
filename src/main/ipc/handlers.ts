@@ -25,6 +25,8 @@ import type { FlightConfig } from '../protocol/types';
 import { run_readout, run_erase } from '../readout/readout_orchestrator';
 import { export_all_csv, export_hr_csv, export_lr_csv, export_summary_csv } from '../readout/csv_export';
 import type { ReadoutResult } from '../readout/readout_types';
+import { compile_logic_graph } from '../protocol/logic_compiler';
+import type { LogicGraphIR } from '../protocol/logic_program';
 import {
   CH_TELEMETRY,
   CH_CAC_UPDATE,
@@ -49,7 +51,9 @@ import {
   CH_ERASE_LOG,
   CH_CMD_SIM_FLIGHT,
   CH_LOG_PROGRESS,
-  CH_EXPORT_LOG_CSV
+  CH_EXPORT_LOG_CSV,
+  CH_UPLOAD_LOGIC,
+  CH_COMPILE_LOGIC
 } from './channels';
 
 // ---------------------------------------------------------------------------
@@ -427,7 +431,59 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
   });
 
   // -----------------------------------------------------------------------
-  // 10. Simulated flight (fire-and-forget)
+  // 10. Logic VM — compile and upload
+  // -----------------------------------------------------------------------
+
+  /**
+   * Upload a logic graph to the FC.
+   *
+   * Compiles the graph to the binary Logic VM format. If the FC is connected,
+   * the binary is transmitted immediately and the result includes `sent: true`.
+   * If the FC is not connected the compile succeeds and `sent: false` is returned
+   * (useful for offline preview from the renderer).
+   */
+  ipcMain.handle(CH_UPLOAD_LOGIC, async (_event, graph: LogicGraphIR) => {
+    const compile_result = compile_logic_graph(graph);
+    if (!compile_result.ok) {
+      return { ok: false, errors: compile_result.errors };
+    }
+    const { bytes, hash, stats } = compile_result;
+    if (fc.is_connected()) {
+      try {
+        await fc.send(bytes);
+        return { ok: true, hash, stats, sent: true };
+      } catch (err) {
+        return {
+          ok: false,
+          errors: [
+            `Compile succeeded but FC send failed: ${err instanceof Error ? err.message : String(err)}`
+          ]
+        };
+      }
+    }
+    // FC not connected — compile-only path
+    return { ok: true, hash, stats, sent: false };
+  });
+
+  /**
+   * Compile a logic graph without sending it to the FC.
+   *
+   * Returns the compiled bytes as a number[] (IPC-serialisable) along with
+   * the CRC hash and compile statistics. Useful for offline validation and
+   * preview in the renderer.
+   */
+  ipcMain.handle(CH_COMPILE_LOGIC, async (_event, graph: LogicGraphIR) => {
+    const compile_result = compile_logic_graph(graph);
+    if (!compile_result.ok) {
+      return { ok: false, errors: compile_result.errors };
+    }
+    const { bytes, hash, stats } = compile_result;
+    // Convert Uint8Array → number[] for structured-clone IPC serialisation
+    return { ok: true, bytes: Array.from(bytes), hash, stats };
+  });
+
+  // -----------------------------------------------------------------------
+  // 11. Simulated flight (fire-and-forget)
   // -----------------------------------------------------------------------
 
   const on_sim_flight = (): void => {
@@ -458,6 +514,8 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeHandler(CH_VERIFY_CONFIG);
     ipcMain.removeHandler(CH_DOWNLOAD_LOG);
     ipcMain.removeHandler(CH_EXPORT_LOG_CSV);
+    ipcMain.removeHandler(CH_UPLOAD_LOGIC);
+    ipcMain.removeHandler(CH_COMPILE_LOGIC);
 
     // Remove fire-and-forget listeners
     ipcMain.removeListener(CH_SCAN_PORTS, on_scan_ports);

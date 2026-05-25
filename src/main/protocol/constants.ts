@@ -64,6 +64,12 @@ export const MSG_ID_ABORT = 0xF1;
 /** CMD_TESTMODE — toggle test mode (PAD state only). */
 export const MSG_ID_CMD_TESTMODE = 0x82;
 
+/** CMD_LOGIC — upload Logic VM program to FC. */
+export const MSG_ID_CMD_LOGIC = 0x83;
+
+/** ACK_LOGIC — logic program upload acknowledgement from FC. */
+export const MSG_ID_ACK_LOGIC = 0xA4;
+
 /** HANDSHAKE — protocol version handshake. */
 export const MSG_ID_HANDSHAKE = 0xC0;
 
@@ -180,6 +186,9 @@ export const BATT_OFFSET = 6.0;
 
 /** FC_GPS_ALT scaling: raw * GPS_ALT_SCALE = metres. */
 export const GPS_ALT_SCALE = 10.0;
+
+/** EMA smoothing factor for Euler angles (0 = no change, 1 = no smoothing). */
+export const EULER_EMA_ALPHA = 0.3;
 
 // ---------------------------------------------------------------------------
 // NACK error messages (PRD Section 17.5)

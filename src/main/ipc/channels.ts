@@ -93,3 +93,9 @@ export const CH_ERASE_LOG = 'casper:erase-flight-log';
 
 /** Start a simulated flight on the FC. */
 export const CH_CMD_SIM_FLIGHT = 'casper:cmd-sim-flight';
+
+/** Upload a compiled Logic VM program to the FC. Args: (graph: LogicGraphIR). */
+export const CH_UPLOAD_LOGIC = 'casper:upload-logic';
+
+/** Compile a logic graph offline (no FC required). Args: (graph: LogicGraphIR). */
+export const CH_COMPILE_LOGIC = 'casper:compile-logic';

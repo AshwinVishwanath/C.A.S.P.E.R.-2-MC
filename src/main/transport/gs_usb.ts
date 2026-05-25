@@ -226,6 +226,7 @@ export class GsUsb extends EventEmitter {
 
           const decoded = cobs_decode(frame_bytes);
           if (decoded !== null) {
+            console.log(`[GS] COBS decoded frame: ${decoded.length} bytes, msg_id=0x${decoded[0]?.toString(16).padStart(2, '0')}`);
             try {
               this.emit('frame', decoded);
             } catch (err) {
@@ -237,9 +238,9 @@ export class GsUsb extends EventEmitter {
                 )
               );
             }
+          } else {
+            console.warn(`[GS] COBS decode failed for ${frame_bytes.length} bytes: [${Array.from(frame_bytes.slice(0, 16)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}${frame_bytes.length > 16 ? '...' : ''}]`);
           }
-          // Malformed frames are silently discarded — expected on
-          // initial connect when partial data may be on the wire.
         }
         // If rx_buffer was empty, this is a back-to-back delimiter — ignore.
       } else {

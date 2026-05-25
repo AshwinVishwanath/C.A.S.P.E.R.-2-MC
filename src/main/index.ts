@@ -66,14 +66,17 @@ function wire_gs_pipeline(): void {
   gs.on('frame', (frame: Uint8Array) => {
     if (frame.length < 1) return
 
+    console.log(`[GS] frame received: ${frame.length} bytes, msg_id=0x${frame[0].toString(16).padStart(2, '0')}`)
+
     const result = parse_packet(frame)
 
     if (!result.ok) {
-      // TODO: Attempt stage 1 CRC correction
+      console.warn(`[GS] parse error: ${result.error}${result.msg_id !== undefined ? ` (msg_id=0x${result.msg_id.toString(16).padStart(2, '0')})` : ''}`)
       return
     }
 
     const msg = result.message
+    console.log(`[GS] parsed message type: ${msg.type}`)
     switch (msg.type) {
       case 'gs_telem':
         store.update_from_gs_telem(msg.data)

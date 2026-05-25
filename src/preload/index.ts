@@ -113,6 +113,28 @@ const casper_api = {
 
   cmd_sim_flight: (): void => {
     ipcRenderer.send('casper:cmd-sim-flight')
+  },
+
+  /**
+   * Upload a logic graph to the FC.
+   *
+   * Compiles the graph in the main process and, if the FC is connected,
+   * transmits the binary Logic VM program. Returns compile errors, hash,
+   * stats, and a `sent` flag indicating whether the FC received it.
+   */
+  upload_logic: (graph: unknown): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:upload-logic', graph)
+  },
+
+  /**
+   * Compile a logic graph without sending it to the FC.
+   *
+   * Returns `{ ok, bytes: number[], hash, stats }` for offline preview.
+   * Useful for the renderer to display compile errors or show program size
+   * before the FC is connected.
+   */
+  compile_logic: (graph: unknown): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:compile-logic', graph)
   }
 }
 
