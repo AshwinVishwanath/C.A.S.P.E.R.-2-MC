@@ -2,7 +2,7 @@
 // Read by Flight tab (right-rail summary panel) and edited by Setup tab.
 // Persists to localStorage so the values survive a reload.
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 const STORAGE_KEY = "casper-mc-flight-config-v1";
 
@@ -16,33 +16,45 @@ export const FLIGHT_CONFIG_DEFAULTS = {
   vehicleId:     "CASPER-2 / 0x7F12",
 };
 
+// Module-level store + subscriber set so every `useFlightConfig()` consumer
+// across the React tree sees updates immediately — not just on remount.
+// Without this, two simultaneously-mounted consumers each hold an independent
+// `useState` copy and the editor's writes never reach the read sites.
+let _cfg = (() => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored
+      ? { ...FLIGHT_CONFIG_DEFAULTS, ...JSON.parse(stored) }
+      : FLIGHT_CONFIG_DEFAULTS;
+  } catch (e) {
+    return FLIGHT_CONFIG_DEFAULTS;
+  }
+})();
+const _listeners = new Set();
+
 export function useFlightConfig() {
-  const [cfg, setCfg] = useState(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored
-        ? { ...FLIGHT_CONFIG_DEFAULTS, ...JSON.parse(stored) }
-        : FLIGHT_CONFIG_DEFAULTS;
-    } catch (e) {
-      return FLIGHT_CONFIG_DEFAULTS;
-    }
-  });
+  const [cfg, setLocal] = useState(_cfg);
+
+  useEffect(() => {
+    _listeners.add(setLocal);
+    setLocal(_cfg);
+    return () => { _listeners.delete(setLocal); };
+  }, []);
 
   const updateConfig = useCallback((patch) => {
-    setCfg((prev) => {
-      const next = { ...prev, ...patch };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
+    _cfg = { ..._cfg, ...patch };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(_cfg));
+    } catch (e) {}
+    _listeners.forEach((l) => l(_cfg));
   }, []);
 
   const resetConfig = useCallback(() => {
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch (e) {}
-    setCfg(FLIGHT_CONFIG_DEFAULTS);
+    _cfg = FLIGHT_CONFIG_DEFAULTS;
+    _listeners.forEach((l) => l(_cfg));
   }, []);
 
   return [cfg, updateConfig, resetConfig];
