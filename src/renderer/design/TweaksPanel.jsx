@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useContext } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import { ThemeCtx } from './ThemeContext.jsx';
 import { Icon } from './icons.jsx';
 import { FONT, TYPE, RADIUS, SPACE } from './tokens.js';
@@ -45,7 +45,7 @@ function TweakSection({ label }) {
   );
 }
 
-function TweakSelect({ label, value, options, onChange }) {
+export function TweakSelect({ label, value, options, onChange }) {
   const T = useT();
   if (!T) return null;
   return (
@@ -76,45 +76,126 @@ function TweakSelect({ label, value, options, onChange }) {
   );
 }
 
-function TweakRadio({ label, value, options, onChange }) {
+// ---------------------------------------------------------------------------
+// TweakRadio — segmented control with animated sliding thumb for ≤3 options
+// ---------------------------------------------------------------------------
+
+export function TweakRadio({ label, value, options, onChange }) {
   const T = useT();
+  const trackRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
   if (!T) return null;
+
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const n = opts.length;
+
+  // Only use segmented control for 2 or 3 options; fall back to TweakSelect for more
+  if (n > 3) {
+    return (
+      <TweakSelect label={label} value={value} options={options} onChange={onChange} />
+    );
+  }
+
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+
+  const segAt = (clientX) => {
+    if (!trackRef.current) return opts[0].value;
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   return (
     <TweakRow label={label}>
-      <div style={{ display: 'flex', gap: 0, borderRadius: RADIUS.sm, overflow: 'hidden', border: `1px solid ${T.border}` }}>
-        {options.map((o) => {
-          const v = typeof o === 'object' ? o.value : o;
-          const l = typeof o === 'object' ? o.label : o;
-          const active = v === value;
-          return (
-            <button
-              key={v}
-              onClick={() => onChange(v)}
-              style={{
-                flex: 1,
-                fontFamily: FONT.mono,
-                fontSize: 10,
-                fontWeight: 600,
-                padding: '4px 6px',
-                background: active ? T.accentBg : T.bgEl,
-                color: active ? T.accent : T.muted,
-                border: 'none',
-                borderRight: `1px solid ${T.border}`,
-                cursor: 'pointer',
-                transition: 'all 120ms ease',
-                letterSpacing: 0.2,
-              }}
-            >
-              {l}
-            </button>
-          );
-        })}
+      <div
+        ref={trackRef}
+        role="radiogroup"
+        onPointerDown={onPointerDown}
+        style={{
+          position: 'relative',
+          display: 'flex',
+          padding: 2,
+          borderRadius: RADIUS.sm,
+          background: `color-mix(in srgb, ${T.bgEl} 60%, transparent)`,
+          border: `1px solid ${T.border}`,
+          userSelect: 'none',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Sliding thumb */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 2,
+            bottom: 2,
+            left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+            width: `calc((100% - 4px) / ${n})`,
+            borderRadius: RADIUS.sm,
+            background: T.accentBg,
+            boxShadow: `0 1px 3px rgba(0,0,0,0.18)`,
+            transition: dragging
+              ? 'none'
+              : 'left 0.15s cubic-bezier(0.3,0.7,0.4,1), width 0.15s',
+            pointerEvents: 'none',
+          }}
+        />
+        {opts.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={o.value === value}
+            onClick={() => onChange(o.value)}
+            style={{
+              appearance: 'none',
+              position: 'relative',
+              zIndex: 1,
+              flex: 1,
+              border: 0,
+              background: 'transparent',
+              fontFamily: FONT.mono,
+              fontSize: 10,
+              fontWeight: 600,
+              color: o.value === value ? T.accent : T.muted,
+              minHeight: 22,
+              borderRadius: RADIUS.sm,
+              cursor: 'pointer',
+              padding: '4px 6px',
+              letterSpacing: 0.2,
+              transition: 'color 120ms ease',
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
       </div>
     </TweakRow>
   );
 }
 
-function TweakToggle({ label, value, onChange }) {
+export function TweakToggle({ label, value, onChange }) {
   const T = useT();
   if (!T) return null;
   return (
@@ -148,8 +229,10 @@ function TweakToggle({ label, value, onChange }) {
 }
 
 // ---------------------------------------------------------------------------
-// TweaksPanel — fixed bottom-right floating panel
+// TweaksPanel — draggable floating panel with FAB chip closed state
 // ---------------------------------------------------------------------------
+
+const PAD = 16;
 
 /**
  * TweaksPanel
@@ -160,9 +243,84 @@ export function TweaksPanel({ tweaks, setTweak }) {
   const T = useT();
   const [open, setOpen] = useState(false);
 
+  // Draggable panel state: position expressed as { right, bottom } offsets
+  const dragRef = useRef(null);
+  const offsetRef = useRef({ x: PAD, y: PAD });
+  // Force re-render after drag to apply updated offset
+  const [, setDragTick] = useState(0);
+
+  const clampToViewport = useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth;
+    const h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    const clamped = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    if (clamped.x !== offsetRef.current.x || clamped.y !== offsetRef.current.y) {
+      offsetRef.current = clamped;
+      setDragTick((t) => t + 1);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    // Clamp after the panel renders (need a tick for offsetWidth/Height)
+    const id = requestAnimationFrame(clampToViewport);
+    const onResize = () => clampToViewport();
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, clampToViewport]);
+
+  const onDragStart = useCallback((e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    // Don't start drag from close button
+    if (e.target.closest && e.target.closest('button[data-close]')) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      const panelEl = dragRef.current;
+      if (panelEl) {
+        const w = panelEl.offsetWidth;
+        const h = panelEl.offsetHeight;
+        const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+        const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+        offsetRef.current = {
+          x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+          y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+        };
+        panelEl.style.right = offsetRef.current.x + 'px';
+        panelEl.style.bottom = offsetRef.current.y + 'px';
+      }
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      // Sync state so a future re-render uses the correct position
+      setDragTick((t) => t + 1);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }, []);
+
   if (!T) return null;
 
-  // Gear button (closed state)
+  // FAB chip — closed state
   if (!open) {
     return (
       <button
@@ -170,62 +328,86 @@ export function TweaksPanel({ tweaks, setTweak }) {
         title="Design tweaks"
         style={{
           position: 'fixed',
-          bottom: 16,
-          right: 16,
+          bottom: PAD,
+          right: PAD,
           zIndex: 9999,
-          width: 38,
-          height: 38,
-          borderRadius: RADIUS.pill,
+          appearance: 'none',
+          border: `1px solid ${T.border}`,
+          height: 32,
+          padding: '0 12px',
+          borderRadius: 16,
           background: T.glassBg,
           backdropFilter: T.glassBlur,
           WebkitBackdropFilter: T.glassBlur,
-          border: `1px solid ${T.border}`,
-          color: T.muted,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
           boxShadow: T.shadow,
+          color: T.text,
+          fontFamily: FONT.mono,
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
           transition: 'all 160ms ease',
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = T.accent; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = T.muted; }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
       >
-        <Icon name="gear" size={16} />
+        {/* Glowing accent dot */}
+        <span style={{
+          display: 'inline-block',
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: T.accent,
+          boxShadow: `0 0 8px ${T.accent}`,
+          flexShrink: 0,
+        }} />
+        TWEAKS
       </button>
     );
   }
 
-  // Open panel
+  // Open panel — draggable
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: 16,
-      right: 16,
-      zIndex: 9999,
-      width: 280,
-      maxHeight: 'calc(100vh - 32px)',
-      display: 'flex',
-      flexDirection: 'column',
-      background: T.glassBg,
-      backdropFilter: T.glassBlur,
-      WebkitBackdropFilter: T.glassBlur,
-      border: `1px solid ${T.border}`,
-      borderRadius: RADIUS.lg,
-      boxShadow: T.shadow,
-      overflow: 'hidden',
-      animation: 'cmcFadeUp 0.18s ease-out',
-    }}>
-      {/* Header */}
-      <div style={{
+    <div
+      ref={dragRef}
+      style={{
+        position: 'fixed',
+        bottom: offsetRef.current.y,
+        right: offsetRef.current.x,
+        zIndex: 9999,
+        width: 280,
+        maxHeight: 'calc(100vh - 32px)',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: `${SPACE.s2}px ${SPACE.s3}px`,
-        borderBottom: `1px solid ${T.border}`,
-        background: T.bgEl,
-        minHeight: 40,
-      }}>
+        flexDirection: 'column',
+        background: T.glassBg,
+        backdropFilter: T.glassBlur,
+        WebkitBackdropFilter: T.glassBlur,
+        border: `1px solid ${T.border}`,
+        borderRadius: RADIUS.lg,
+        boxShadow: T.shadow,
+        overflow: 'hidden',
+        animation: 'cmcFadeUp 0.18s ease-out',
+      }}
+    >
+      {/* Header — drag handle */}
+      <div
+        onMouseDown={onDragStart}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: `${SPACE.s2}px ${SPACE.s3}px`,
+          borderBottom: `1px solid ${T.border}`,
+          background: T.bgEl,
+          minHeight: 40,
+          cursor: 'move',
+          userSelect: 'none',
+        }}
+      >
         <div style={{
           display: 'flex', alignItems: 'center', gap: SPACE.s2,
           fontFamily: FONT.cond, fontSize: 11, fontWeight: 700,
@@ -236,6 +418,8 @@ export function TweaksPanel({ tweaks, setTweak }) {
           TWEAKS
         </div>
         <button
+          data-close="true"
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={() => setOpen(false)}
           style={{
             background: 'transparent', border: 'none',
