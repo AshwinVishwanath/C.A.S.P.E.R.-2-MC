@@ -42,6 +42,13 @@
   to   { stroke-dashoffset: 0; }
 }
 
+/* cmcNodeFlash — translucent fill flash for live-firing pyro nodes.
+   Opacity-only (no transform) so it works correctly on SVG <rect>. */
+@keyframes cmcNodeFlash {
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 0.45; }
+}
+
 /* bob — used by the existing App.jsx mascot animation */
 @keyframes bob {
   0%, 100% { transform: translateY(0); }

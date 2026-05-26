@@ -117,14 +117,13 @@ export function Node({
       {/* Category color top stripe */}
       <rect x="0" y="0" width={w} height="4" rx="6" fill={catColor} />
 
-      {/* Live pyro fire pulse ring */}
+      {/* Live pyro fire flash — whole-node red overlay that pulses */}
       {livePyro && (
         <rect
           x="0" y="0" width={w} height={h} rx="6"
-          fill="none"
-          stroke={T.danger}
-          strokeWidth="2.5"
-          style={{ animation: 'cmcPulse 0.8s infinite' }}
+          fill={T.danger}
+          pointerEvents="none"
+          style={{ animation: 'cmcNodeFlash 0.8s ease-in-out infinite' }}
         />
       )}
 
