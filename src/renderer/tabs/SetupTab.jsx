@@ -8,9 +8,6 @@ import { Cap, Pill, Panel, Btn, Dot } from '../design/components.jsx';
 import { Icon } from '../design/icons.jsx';
 
 import { SerialPortPicker } from '../components/SerialPortPicker.jsx';
-import FlightConfigEditor from '../components/FlightConfigEditor.jsx';
-import SensorDiagnostics from '../components/SensorDiagnostics.jsx';
-import { useFlightConfig } from '../hooks/useFlightConfig.js';
 
 import PyroEditor from '../pyro/PyroEditor.jsx';
 import { pyroReducer, initialState } from '../pyro/reducer.js';
@@ -108,9 +105,6 @@ export default function SetupTab({ serial }) {
   const T = useTheme();
   const scheme = T.scheme || 'fusion';
   const sk = SCHEME_PROPS[scheme] || SCHEME_PROPS.fusion;
-
-  // Flight config state — shared with Flight tab RightRail via localStorage
-  const [flightConfig, updateFlightConfig, resetFlightConfig] = useFlightConfig();
 
   // Pyro graph state lives here so the Setup tab persists across tab switches
   const [pyroState, dispatch] = useReducer(pyroReducer, undefined, () =>
@@ -275,20 +269,6 @@ export default function SetupTab({ serial }) {
 
       {/* Serial picker */}
       <SerialBar serial={serial} />
-
-      {/* Flight configuration editor */}
-      <div style={{ marginBottom: SPACE.s4 }}>
-        <FlightConfigEditor
-          config={flightConfig}
-          onUpdate={updateFlightConfig}
-          onReset={resetFlightConfig}
-        />
-      </div>
-
-      {/* Sensor bus diagnostics */}
-      <div style={{ marginBottom: SPACE.s4 }}>
-        <SensorDiagnostics />
-      </div>
 
       {/* Pyro editor */}
       <PyroEditor

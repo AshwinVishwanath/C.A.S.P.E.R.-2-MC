@@ -14,12 +14,6 @@ import { useTheme, useTweaksValue } from '../../design/ThemeContext';
 import { Cap, Pill, Btn, Panel } from '../../design/components';
 import { FONT, SPACE, SCHEME_PROPS } from '../../design/tokens.js';
 import PyroRail from './PyroRail.jsx';
-import {
-  useFlightConfig,
-  flightConfigHash,
-  formatMassKg,
-  formatAltM,
-} from '../../hooks/useFlightConfig.js';
 
 // ---------------------------------------------------------------------------
 // ARM BUTTON BEHAVIOUR
@@ -54,9 +48,6 @@ export default function RightRail({ tel, cmd }) {
   const tweaks = useTweaksValue();
   const scheme = tweaks.scheme;
   const sk = SCHEME_PROPS[scheme] || SCHEME_PROPS.fusion;
-
-  // Flight config — reads same localStorage key written by Setup tab FlightConfigEditor
-  const [flightConfig] = useFlightConfig();
 
   const anyArmed = tel.pyro && tel.pyro.slice(0, 3).some((ch) => ch.armed);
   const disabled = !tel || !tel.pyro;
@@ -144,20 +135,20 @@ export default function RightRail({ tel, cmd }) {
         </div>
       </Panel>
 
-      {/* Flight config — live values from Setup tab FlightConfigEditor */}
+      {/* Flight config */}
       <Panel
         title="FLIGHT CONFIG"
-        right={<Pill color={T.muted} size="sm">{flightConfigHash(flightConfig)}</Pill>}
+        right={<Pill color={T.muted} size="sm">v1.4.2</Pill>}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: SPACE.s2, fontFamily: FONT.mono, fontSize: 12 }}>
           {[
-            ['Profile',       flightConfig.profile],
-            ['Motor',         flightConfig.motor],
-            ['Mass (wet)',    formatMassKg(flightConfig.massWetKg)],
-            ['Apogee target', formatAltM(flightConfig.apogeeTargetM)],
-            ['Drogue at',     flightConfig.drogueAt],
-            ['Main at',       formatAltM(flightConfig.mainAtM) + ' AGL'],
-            ['CRC hash',      flightConfigHash(flightConfig)],
+            ['Profile',       'L1 single-stage'],
+            ['Motor',         'AeroTech J350W'],
+            ['Mass (wet)',    '3.84 kg'],
+            ['Apogee target', '1,850 m'],
+            ['Drogue at',     'T+APOGEE'],
+            ['Main at',       '300 m AGL'],
+            ['CRC hash',      '0x4F2A8C'],
           ].map(([k, v]) => <KVRow key={k} label={k} value={v} />)}
         </div>
       </Panel>
