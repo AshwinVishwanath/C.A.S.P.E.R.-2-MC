@@ -142,8 +142,8 @@ export function Node({
         {spec.label}
       </text>
 
-      {/* Sub-label */}
-      {spec.sub && (
+      {/* Sub-label — only shown when there is no config badge */}
+      {!badge && spec.sub && (
         <text
           x={NODE_PAD} y={NODE_HEADER - 2}
           fill={T.muted}
@@ -191,7 +191,7 @@ export function Node({
             x={NODE_PAD} y={badgeTop}
             width={w - NODE_PAD * 2} height={BADGE_H - 4}
             rx="3"
-            fill={catColor + '22'} stroke={catColor + '55'} strokeWidth="1"
+            fill={`color-mix(in oklch, ${catColor} 13%, transparent)`} stroke={`color-mix(in oklch, ${catColor} 33%, transparent)`} strokeWidth="1"
             vectorEffect="non-scaling-stroke"
           />
           <text
