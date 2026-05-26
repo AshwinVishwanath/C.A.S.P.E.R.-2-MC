@@ -105,13 +105,13 @@ export default function HeroStrip({ tel, cmd }) {
     <Panel padded={false} style={{ position: 'relative', overflow: 'hidden' }}>
       {/* Liquid shader background for glass schemes */}
       {glassy && tweaks.shader && (
-        <div style={{ position: 'absolute', inset: 0, opacity: 0.45, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', inset: 0, opacity: T.name === 'dark' ? 0.85 : 0.20, pointerEvents: 'none' }}>
           <LiquidShader motion={motion} />
           <div style={{
             position: 'absolute', inset: 0,
             background: T.name === 'dark'
-              ? `linear-gradient(180deg, ${T.bg}66 0%, ${T.bg}cc 100%)`
-              : `linear-gradient(180deg, ${T.bg}44 0%, ${T.bg}aa 100%)`,
+              ? `linear-gradient(180deg, ${T.bg}33 0%, ${T.bg}88 100%)`
+              : `linear-gradient(180deg, ${T.bg}cc 0%, ${T.bg}ee 100%)`,
           }} />
         </div>
       )}
