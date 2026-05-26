@@ -59,3 +59,24 @@
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.55; transform: scale(0.94); }
 }
+
+/* ── Global scrollbar styling (dark theme) ─────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(28% 0.012 240);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(38% 0.012 240);
+}
+
+html, body {
+  scrollbar-color: oklch(28% 0.012 240) transparent;
+  scrollbar-width: thin;
+}
