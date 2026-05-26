@@ -1,5 +1,5 @@
 // Canvas.jsx — SVG canvas with grid, pan/zoom, node/edge/group rendering
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useEffect } from 'react';
 import { FONT, SCHEME_PROPS } from '../design/tokens.js';
 import { PORT_COLORS } from './types.js';
 import { getPortInfo } from './spec.js';
@@ -93,20 +93,28 @@ export function Canvas({
   // -------------------------------------------------------------------------
   // Mouse handlers
   // -------------------------------------------------------------------------
-  const onWheel = (e) => {
-    // Always zoom on wheel (trackpad-friendly); Space-hold for pan
-    e.preventDefault();
-    const r = svgRef.current.getBoundingClientRect();
-    const mx = e.clientX - r.left;
-    const my = e.clientY - r.top;
-    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-    setView((v) => {
-      const nk = Math.max(0.2, Math.min(2.5, v.k * factor));
-      const nx = mx - (mx - v.x) * (nk / v.k);
-      const ny = my - (my - v.y) * (nk / v.k);
-      return { x: nx, y: ny, k: nk };
-    });
-  };
+  // Native non-passive wheel listener — prevents page scroll while cursor is over the canvas.
+  // React's synthetic onWheel is passive by default; e.preventDefault() there is a no-op.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handleWheel = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const r = el.getBoundingClientRect();
+      const mx = e.clientX - r.left;
+      const my = e.clientY - r.top;
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      setView((v) => {
+        const nk = Math.max(0.2, Math.min(2.5, v.k * factor));
+        const nx = mx - (mx - v.x) * (nk / v.k);
+        const ny = my - (my - v.y) * (nk / v.k);
+        return { x: nx, y: ny, k: nk };
+      });
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [setView]);
 
   const onCanvasMouseDown = (e) => {
     // Middle-mouse or space-hold → pan
@@ -285,7 +293,6 @@ export function Canvas({
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseUp}
-      onWheel={onWheel}
       onDragOver={(e) => e.preventDefault()}
       onDrop={onCanvasDrop}
       style={{
