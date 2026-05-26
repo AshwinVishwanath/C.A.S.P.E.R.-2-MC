@@ -117,37 +117,38 @@ export function Node({
       {/* Category color top stripe */}
       <rect x="0" y="0" width={w} height="4" rx="6" fill={catColor} />
 
-      {/* Live pyro fire pulse ring */}
+      {/* Live pyro fire flash — whole-node red overlay that pulses */}
       {livePyro && (
         <rect
           x="0" y="0" width={w} height={h} rx="6"
-          fill="none"
-          stroke={T.danger}
-          strokeWidth="2.5"
-          style={{ animation: 'cmcPulse 0.8s infinite' }}
+          fill={T.danger}
+          pointerEvents="none"
+          style={{ animation: 'cmcNodeFlash 0.8s ease-in-out infinite' }}
         />
       )}
 
-      {/* Node title */}
+      {/* Node title — positioned below the 4px category bar with clear padding */}
       <text
-        x={NODE_PAD} y={20}
+        x={NODE_PAD} y={22}
         fill={T.strong}
         fontFamily={FONT.sans}
         fontSize="12"
         fontWeight="700"
         letterSpacing="0.04em"
+        dominantBaseline="auto"
         pointerEvents="none"
       >
         {spec.label}
       </text>
 
-      {/* Sub-label */}
-      {spec.sub && (
+      {/* Sub-label — only shown when there is no config badge */}
+      {!badge && spec.sub && (
         <text
           x={NODE_PAD} y={NODE_HEADER - 2}
           fill={T.muted}
           fontFamily={FONT.mono}
           fontSize="9"
+          dominantBaseline="auto"
           pointerEvents="none"
         >
           {spec.sub}
@@ -189,7 +190,7 @@ export function Node({
             x={NODE_PAD} y={badgeTop}
             width={w - NODE_PAD * 2} height={BADGE_H - 4}
             rx="3"
-            fill={catColor + '22'} stroke={catColor + '55'} strokeWidth="1"
+            fill={`color-mix(in oklch, ${catColor} 13%, transparent)`} stroke={`color-mix(in oklch, ${catColor} 33%, transparent)`} strokeWidth="1"
             vectorEffect="non-scaling-stroke"
           />
           <text

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, Menu } from 'electron'
 import { join } from 'path'
 
 import { FcUsb } from './transport/fc_usb'
@@ -174,6 +174,7 @@ function wire_connection_events(): void {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
   create_window()
 
   // 1. Create transport managers

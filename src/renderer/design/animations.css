@@ -42,6 +42,13 @@
   to   { stroke-dashoffset: 0; }
 }
 
+/* cmcNodeFlash — translucent fill flash for live-firing pyro nodes.
+   Opacity-only (no transform) so it works correctly on SVG <rect>. */
+@keyframes cmcNodeFlash {
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 0.45; }
+}
+
 /* bob — used by the existing App.jsx mascot animation */
 @keyframes bob {
   0%, 100% { transform: translateY(0); }
@@ -58,4 +65,37 @@
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.55; transform: scale(0.94); }
+}
+
+/* ── Global scrollbar styling ───────────────────────────────────────────── */
+/* Default: dark theme (also applies pre-mount before body class is set)    */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(28% 0.012 240);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(38% 0.012 240);
+}
+
+html {
+  scrollbar-color: oklch(28% 0.012 240) transparent;
+  scrollbar-width: thin;
+}
+
+/* Light theme overrides */
+.cmc-light ::-webkit-scrollbar-thumb {
+  background: oklch(78% 0.012 75);
+}
+.cmc-light ::-webkit-scrollbar-thumb:hover {
+  background: oklch(68% 0.012 75);
+}
+.cmc-light {
+  scrollbar-color: oklch(78% 0.012 75) transparent;
 }

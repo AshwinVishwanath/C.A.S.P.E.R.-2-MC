@@ -582,11 +582,11 @@ void main() {
   // Color ramp: deep -> mid -> accent1 -> accent2.
   vec3 col = mix(u_a, u_b, smoothstep(0.0, 0.5, flow));
   col = mix(col, u_c, smoothstep(0.45, 0.78, flow) * 0.7);
-  col = mix(col, u_d, ridge * 0.55);
+  col = mix(col, u_d, ridge * 0.85);
 
   // Specular streak that drifts horizontally.
   float spec = smoothstep(0.86, 1.0, fbm(p * 1.4 + vec2(t * 1.4, 0.0)));
-  col += u_d * spec * 0.18;
+  col += u_d * spec * 0.32;
 
   // Subtle film grain.
   float g = (hash(uv * u_res + t) - 0.5) * u_grain;
@@ -773,9 +773,16 @@ export function LiquidShader({ T: propT, motion = true, intensity = 1 }) {
     // Resolve theme colours → vec3 float triples.
     const shaderColors = T.shader || [T.bg, T.accent, T.bg];
     const cA = _cssToVec3(shaderColors[0]);              // deep
-    const cB = _cssToVec3(T.bgEl  || shaderColors[0]);  // mid (bgEl is one step lighter than bg)
-    const cC = _cssToVec3(shaderColors[1]);              // accent1
-    const cD = _cssToVec3(shaderColors[2]);              // accent2
+    // In dark mode T.bgEl is oklch(16% ...) — nearly as black as u_a — so the
+    // mid-tone ramp step produces zero visible signal.  Instead blend accent1
+    // and accent2 at 50/50 to give the mid zone real chroma.
+    const _cC = _cssToVec3(shaderColors[1]);
+    const _cD = _cssToVec3(shaderColors[2]);
+    const cB = T.name === 'dark'
+      ? [(_cC[0] + _cD[0]) * 0.5, (_cC[1] + _cD[1]) * 0.5, (_cC[2] + _cD[2]) * 0.5]
+      : _cssToVec3(T.bgEl || shaderColors[0]);           // light mode: keep bgEl (off-white)
+    const cC = _cC;                                      // accent1
+    const cD = _cD;                                      // accent2
 
     gl.uniform3f(locs.uA, cA[0], cA[1], cA[2]);
     gl.uniform3f(locs.uB, cB[0], cB[1], cB[2]);

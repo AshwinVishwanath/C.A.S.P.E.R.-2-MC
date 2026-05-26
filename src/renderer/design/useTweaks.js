@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 const STORAGE_KEY = 'casper_tweaks_v1';
 
 const DEFAULTS = {
-  scheme: 'fusion',
+  scheme: 'instrument',
   mode:   'dark',
   accent: 'auto',
   motion: true,
