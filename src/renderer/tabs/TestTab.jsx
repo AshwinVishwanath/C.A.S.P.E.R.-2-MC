@@ -18,9 +18,10 @@ import { useTheme, useTweaksValue } from '../design/ThemeContext';
 import { Cap, Pill, Btn, Panel, StatTile, Sparkline } from '../design/components';
 import { FONT, SPACE, TYPE, SCHEME_PROPS } from '../design/tokens.js';
 
-import Diagnostics from './test/Diagnostics.jsx';
-import CACConsole  from './test/CACConsole.jsx';
-import useTelemHistory from './flight/useTelemHistory.js';
+import Diagnostics      from './test/Diagnostics.jsx';
+import CACConsole       from './test/CACConsole.jsx';
+import SensorDiagnostics from '../components/SensorDiagnostics.jsx';
+import useTelemHistory  from './flight/useTelemHistory.js';
 
 export default function TestTab({ tel, diag, cmd }) {
   const T = useTheme();
@@ -140,6 +141,9 @@ export default function TestTab({ tel, diag, cmd }) {
           large
         />
       </div>
+
+      {/* Sensor bus diagnostics */}
+      <SensorDiagnostics />
 
       {/* Diagnostics table */}
       <Diagnostics diag={diag} />
