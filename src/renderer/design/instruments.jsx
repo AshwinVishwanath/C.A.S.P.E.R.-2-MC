@@ -505,55 +505,304 @@ export function Dial({ T: propT, size = 200, value = 0, min = 0, max = 100, labe
 }
 
 // ---------------------------------------------------------------------------
-// LiquidShader — animated radial blob canvas
+// LiquidShader — WebGL domain-warped fbm metallic shader
+//
+// Ported from LiquidMetalCanvas (feat/lab-design-taster) into the instruments
+// design system. Reads theme colours from T.shader [deep, accent1, accent2]
+// and derives a 4th mid-tone from T.bgEl. Falls back to a Canvas2D gradient
+// fill when WebGL is unavailable.
+//
+// Props: T (theme), motion (bool), intensity (0..1)
 // ---------------------------------------------------------------------------
+
+// --- WebGL shader sources ---------------------------------------------------
+
+const _VERT = `
+attribute vec2 a_pos;
+varying vec2 v_uv;
+void main() {
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}
+`;
+
+const _FRAG = `
+precision highp float;
+varying vec2 v_uv;
+uniform vec2  u_res;
+uniform float u_time;
+uniform vec3  u_a;         // deep background
+uniform vec3  u_b;         // mid tone (bgEl-derived)
+uniform vec3  u_c;         // accent 1
+uniform vec3  u_d;         // accent 2
+uniform float u_grain;     // 0..0.03 film grain amount
+uniform float u_intensity; // 0..1 intensity fade
+
+// 2D hash + value noise.
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 34.345);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash(i);
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    v += a * vnoise(p);
+    p *= 2.02;
+    a *= 0.5;
+  }
+  return v;
+}
+
+void main() {
+  vec2 uv = v_uv;
+  vec2 p  = uv * vec2(u_res.x / u_res.y, 1.0) * 1.6;
+  float t  = u_time * 0.05;
+
+  // Domain warp — gives the liquid / flowing feel.
+  vec2 q = vec2(fbm(p + vec2(0.0, t)),
+                fbm(p + vec2(5.2, -t * 1.3)));
+  vec2 r = vec2(fbm(p + 4.0 * q + vec2(1.7, 9.2) + t),
+                fbm(p + 4.0 * q + vec2(8.3, 2.8) - t));
+  float f = fbm(p + 4.0 * r);
+
+  // Sharpen flow into metallic ridges.
+  float ridge = smoothstep(0.40, 0.85, f);
+  float flow  = pow(f, 1.6);
+
+  // Color ramp: deep -> mid -> accent1 -> accent2.
+  vec3 col = mix(u_a, u_b, smoothstep(0.0, 0.5, flow));
+  col = mix(col, u_c, smoothstep(0.45, 0.78, flow) * 0.7);
+  col = mix(col, u_d, ridge * 0.55);
+
+  // Specular streak that drifts horizontally.
+  float spec = smoothstep(0.86, 1.0, fbm(p * 1.4 + vec2(t * 1.4, 0.0)));
+  col += u_d * spec * 0.18;
+
+  // Subtle film grain.
+  float g = (hash(uv * u_res + t) - 0.5) * u_grain;
+  col += g;
+
+  // Vignette toward edges so the shader sits naturally behind UI chrome.
+  float edge = smoothstep(0.95, 0.4, length(uv - 0.5) * 1.4);
+
+  // Intensity fade lets us soften the shader behind dense panels.
+  col = mix(u_a, col, u_intensity * edge);
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// --- Helpers ----------------------------------------------------------------
+
+/** Compile a single WebGL shader. Returns the shader object or throws. */
+function _compileShader(gl, type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw new Error('shader compile: ' + log);
+  }
+  return s;
+}
+
+/**
+ * Resolve a CSS color string (e.g. oklch(...)) to a [r, g, b] float triple
+ * in [0, 1] by reusing the existing _toRGBA helper.
+ */
+function _cssToVec3(colorStr) {
+  // _toRGBA returns "rgba(r,g,b,a)" — parse the r,g,b components.
+  const resolved = _toRGBA(colorStr, 1);
+  const m = resolved.match(/rgba?\(([^)]+)\)/);
+  if (!m) return [0, 0, 0];
+  const parts = m[1].split(',').map((s) => parseFloat(s.trim()));
+  return [parts[0] / 255, parts[1] / 255, parts[2] / 255];
+}
+
+// --- Canvas2D fallback (used when WebGL is unavailable) --------------------
+
+function _drawFallback(canvas, colors) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = colors[0];
+  ctx.fillRect(0, 0, w, h);
+  const grad = ctx.createRadialGradient(w * 0.4, h * 0.4, 0, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
+  grad.addColorStop(0, _toRGBA(colors[1], 0.28));
+  grad.addColorStop(1, _toRGBA(colors[1], 0));
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+}
+
+// --- LiquidShader component -------------------------------------------------
+
 export function LiquidShader({ T: propT, motion = true, intensity = 1 }) {
   const T = useT(propT);
   const ref = useRef(null);
 
+  // --- WebGL init / teardown (runs once on mount) ---------------------------
   useEffect(() => {
     if (!T) return;
-    const c = ref.current;
-    if (!c) return;
-    let raf;
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const canvas = ref.current;
+    if (!canvas) return;
+
+    // Attempt to acquire a WebGL context.
+    const gl = canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false, alpha: false });
+
+    if (!gl) {
+      // No WebGL — paint a static Canvas2D gradient as fallback.
+      canvas.width  = Math.max(1, canvas.clientWidth  | 0);
+      canvas.height = Math.max(1, canvas.clientHeight | 0);
+      const colors = T.shader || [T.bg, T.accent, T.bg];
+      _drawFallback(canvas, colors);
+      return;
+    }
+
+    // Build shader program.
+    let prog;
+    try {
+      const vs = _compileShader(gl, gl.VERTEX_SHADER,   _VERT);
+      const fs = _compileShader(gl, gl.FRAGMENT_SHADER, _FRAG);
+      prog = gl.createProgram();
+      gl.attachShader(prog, vs);
+      gl.attachShader(prog, fs);
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        throw new Error('link: ' + gl.getProgramInfoLog(prog));
+      }
+      gl.deleteShader(vs);
+      gl.deleteShader(fs);
+    } catch (e) {
+      console.warn('[LiquidShader] WebGL program failed:', e);
+      return;
+    }
+
+    // Upload a full-screen quad (two triangles covering NDC space).
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1,  1, -1, -1,  1,
+      -1,  1,  1, -1,  1,  1,
+    ]), gl.STATIC_DRAW);
+
+    const aPos = gl.getAttribLocation(prog, 'a_pos');
+    const locs = {
+      uRes:       gl.getUniformLocation(prog, 'u_res'),
+      uTime:      gl.getUniformLocation(prog, 'u_time'),
+      uA:         gl.getUniformLocation(prog, 'u_a'),
+      uB:         gl.getUniformLocation(prog, 'u_b'),
+      uC:         gl.getUniformLocation(prog, 'u_c'),
+      uD:         gl.getUniformLocation(prog, 'u_d'),
+      uGrain:     gl.getUniformLocation(prog, 'u_grain'),
+      uIntensity: gl.getUniformLocation(prog, 'u_intensity'),
+    };
+
+    gl.useProgram(prog);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    // Store WebGL state on a ref so the animation-loop effect can access it.
+    ref.current._wgl = { gl, prog, locs, buf, raf: 0 };
+
+    // ResizeObserver — keeps canvas pixels matched to CSS layout size (dpr-aware).
     const resize = () => {
-      const rect = c.getBoundingClientRect();
-      c.width = rect.width * dpr;
-      c.height = rect.height * dpr;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const W = Math.max(1, (canvas.clientWidth  * dpr) | 0);
+      const H = Math.max(1, (canvas.clientHeight * dpr) | 0);
+      if (canvas.width !== W || canvas.height !== H) {
+        canvas.width  = W;
+        canvas.height = H;
+      }
+      gl.viewport(0, 0, W, H);
+      gl.uniform2f(locs.uRes, W, H);
     };
     resize();
-    let obs;
-    try { obs = new ResizeObserver(resize); obs.observe(c); } catch {}
-    const ctx = c.getContext('2d');
-    const colors = T.shader || [T.bg, T.accent, T.bg];
-    let t = 0;
 
-    const draw = () => {
-      const w = c.width, h = c.height;
-      ctx.clearRect(0, 0, w, h);
-      const blobs = [
-        { x: 0.3 + Math.sin(t * 0.0006) * 0.18, y: 0.4 + Math.cos(t * 0.0008) * 0.20, r: 0.7, c: colors[1] },
-        { x: 0.7 + Math.cos(t * 0.0005) * 0.16, y: 0.3 + Math.sin(t * 0.0007) * 0.18, r: 0.55, c: colors[2] },
-        { x: 0.5 + Math.sin(t * 0.0004) * 0.20, y: 0.7 + Math.cos(t * 0.0009) * 0.14, r: 0.6, c: colors[1] },
-      ];
-      ctx.fillStyle = colors[0];
-      ctx.fillRect(0, 0, w, h);
-      blobs.forEach((b) => {
-        const bx = b.x * w, by = b.y * h, rr = b.r * Math.max(w, h);
-        const grad = ctx.createRadialGradient(bx, by, 0, bx, by, rr);
-        grad.addColorStop(0, _toRGBA(b.c, T.name === 'dark' ? 0.33 * intensity : 0.27 * intensity));
-        grad.addColorStop(1, _toRGBA(b.c, 0));
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, w, h);
-      });
-      if (motion) { t += 16; raf = requestAnimationFrame(draw); }
-    };
-    raf = requestAnimationFrame(draw);
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+
     return () => {
-      if (obs) obs.disconnect();
-      if (raf) cancelAnimationFrame(raf);
+      // Cancel any pending animation frame.
+      const wgl = ref.current && ref.current._wgl;
+      if (wgl) cancelAnimationFrame(wgl.raf);
+
+      ro.disconnect();
+
+      try {
+        gl.deleteBuffer(buf);
+        gl.deleteProgram(prog);
+      } catch (_) {}
+
+      if (ref.current) ref.current._wgl = null;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once — theme/motion/intensity handled by the loop effect below
+
+  // --- Animation loop (re-runs when theme, motion, or intensity change) -----
+  useEffect(() => {
+    if (!T) return;
+    const canvas = ref.current;
+    if (!canvas) return;
+
+    const wgl = canvas._wgl;
+
+    // Fallback path: if WebGL init didn't succeed, repaint Canvas2D static frame.
+    if (!wgl) {
+      canvas.width  = Math.max(1, canvas.clientWidth  | 0);
+      canvas.height = Math.max(1, canvas.clientHeight | 0);
+      const colors = T.shader || [T.bg, T.accent, T.bg];
+      _drawFallback(canvas, colors);
+      return;
+    }
+
+    const { gl, locs } = wgl;
+    gl.useProgram(wgl.prog);
+
+    // Resolve theme colours → vec3 float triples.
+    const shaderColors = T.shader || [T.bg, T.accent, T.bg];
+    const cA = _cssToVec3(shaderColors[0]);              // deep
+    const cB = _cssToVec3(T.bgEl  || shaderColors[0]);  // mid (bgEl is one step lighter than bg)
+    const cC = _cssToVec3(shaderColors[1]);              // accent1
+    const cD = _cssToVec3(shaderColors[2]);              // accent2
+
+    gl.uniform3f(locs.uA, cA[0], cA[1], cA[2]);
+    gl.uniform3f(locs.uB, cB[0], cB[1], cB[2]);
+    gl.uniform3f(locs.uC, cC[0], cC[1], cC[2]);
+    gl.uniform3f(locs.uD, cD[0], cD[1], cD[2]);
+    gl.uniform1f(locs.uGrain, 0.022);
+    gl.uniform1f(locs.uIntensity, Math.max(0, Math.min(1, intensity)));
+
+    // Honour prefers-reduced-motion.
+    const prefersReduced = typeof window !== 'undefined'
+      && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    cancelAnimationFrame(wgl.raf);
+
+    const isFrozen = !motion || prefersReduced;
+    const start = performance.now();
+
+    const draw = (now) => {
+      const elapsed = (now - start) / 1000;
+      gl.uniform1f(locs.uTime, isFrozen ? 0.0 : elapsed);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      if (!isFrozen) wgl.raf = requestAnimationFrame(draw);
+    };
+    wgl.raf = requestAnimationFrame(draw);
+
+    return () => cancelAnimationFrame(wgl.raf);
   }, [T, motion, intensity]);
 
   return (
