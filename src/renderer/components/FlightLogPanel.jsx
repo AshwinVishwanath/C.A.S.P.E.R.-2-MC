@@ -1,101 +1,24 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
+import { ThemeCtx } from '../design/ThemeContext.jsx';
+import { FONT, TYPE, SPACE, RADIUS, SCHEME_PROPS } from '../design/tokens.js';
+import { Panel, Cap, Btn, StatTile } from '../design/components';
 import useFlightLog from '../hooks/use_flight_log';
 
-var MONO = "'IBM Plex Mono','Menlo',monospace";
-var COND = "'IBM Plex Sans Condensed','Arial Narrow',sans-serif";
-
+// ---------------------------------------------------------------------------
+// FlightLogPanel — split-pane harvest UI
+// Left: progress + stat tiles   Right: scrollable event log
+// Props: conn (bool), theme (T) — theme may also come from ThemeContext
+// ---------------------------------------------------------------------------
 export default function FlightLogPanel(props) {
+  // Accept theme from context OR from props.theme (existing callers pass props.theme)
+  var ctx = useContext(ThemeCtx);
+  var T = props.theme || (ctx && ctx.theme) || null;
   var conn = props.conn;
-  var T = props.theme;
+
   var log = useFlightLog();
   var [confirmErase, setConfirmErase] = useState(false);
 
-  // Progress bar
-  var progressBar = null;
-  if (log.progress && log.busy) {
-    var pct = log.progress.pct || 0;
-    var phase = log.progress.phase || '';
-    var detail = log.progress.detail || '';
-    progressBar = (
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ fontFamily: COND, fontSize: 10, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: 1.5 }}>{phase}</span>
-          <span style={{ fontFamily: MONO, fontSize: 10, color: T.muted }}>{pct}%</span>
-        </div>
-        <div style={{ height: 6, background: T.bgEl, borderRadius: 3, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: pct + '%', background: T.accent, borderRadius: 3, transition: 'width 0.3s ease' }} />
-        </div>
-        <div style={{ fontFamily: MONO, fontSize: 9, color: T.muted, marginTop: 4 }}>{detail}</div>
-      </div>
-    );
-  }
-
-  // Error display
-  var errorDisplay = null;
-  if (log.progress && log.progress.phase === 'error' && !log.busy) {
-    errorDisplay = (
-      <div style={{ marginTop: 10, padding: '8px 12px', background: T.danger + '18', border: '1px solid ' + T.danger + '44', borderRadius: 4 }}>
-        <span style={{ fontFamily: MONO, fontSize: 10, color: T.danger }}>{log.progress.error || log.progress.detail}</span>
-      </div>
-    );
-  }
-
-  // Results summary
-  var resultDisplay = null;
-  if (log.result && !log.busy) {
-    var meta = log.result.metadata;
-    var hrCount = log.result.hr_entries ? log.result.hr_entries.length : 0;
-    var lrCount = log.result.lr_entries ? log.result.lr_entries.length : 0;
-    var sumCount = log.result.summary_entries ? log.result.summary_entries.length : 0;
-
-    resultDisplay = (
-      <div style={{ marginTop: 10 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-          <div style={{ padding: '8px 12px', background: T.bgEl, borderRadius: 4, border: '1px solid ' + T.border }}>
-            <div style={{ fontFamily: COND, fontSize: 9, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1 }}>High-Rate</div>
-            <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 700, color: T.strong }}>{hrCount.toLocaleString()}</div>
-            <div style={{ fontFamily: MONO, fontSize: 9, color: T.muted }}>entries</div>
-          </div>
-          <div style={{ padding: '8px 12px', background: T.bgEl, borderRadius: 4, border: '1px solid ' + T.border }}>
-            <div style={{ fontFamily: COND, fontSize: 9, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1 }}>Low-Rate</div>
-            <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 700, color: T.strong }}>{lrCount.toLocaleString()}</div>
-            <div style={{ fontFamily: MONO, fontSize: 9, color: T.muted }}>entries</div>
-          </div>
-          <div style={{ padding: '8px 12px', background: T.bgEl, borderRadius: 4, border: '1px solid ' + T.border }}>
-            <div style={{ fontFamily: COND, fontSize: 9, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1 }}>Summary</div>
-            <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 700, color: T.strong }}>{sumCount}</div>
-            <div style={{ fontFamily: MONO, fontSize: 9, color: T.muted }}>events</div>
-          </div>
-        </div>
-
-        {/* Flash address info */}
-        {meta && (
-          <div style={{ marginTop: 8, fontFamily: MONO, fontSize: 9, color: T.muted }}>
-            Flash: HR @ 0x{(meta.hr_addr || 0).toString(16).toUpperCase().padStart(8, '0')} · LR @ 0x{(meta.lr_addr || 0).toString(16).toUpperCase().padStart(8, '0')} · Summary: {(meta.summary_bytes || 0).toLocaleString()} bytes
-          </div>
-        )}
-
-        {/* Summary event log */}
-        {log.result.summary_entries && log.result.summary_entries.length > 0 && (
-          <div style={{ marginTop: 10 }}>
-            <div style={{ fontFamily: COND, fontSize: 10, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 6 }}>Flight Events</div>
-            <div style={{ maxHeight: 160, overflowY: 'auto', background: T.bgEl, borderRadius: 4, border: '1px solid ' + T.border, padding: '4px 0' }}>
-              {log.result.summary_entries.map(function (entry, i) {
-                return (
-                  <div key={i} style={{ display: 'flex', gap: 10, padding: '3px 10px', fontFamily: MONO, fontSize: 10 }}>
-                    <span style={{ color: T.accent, minWidth: 60 }}>{entry.timestamp_s != null ? entry.timestamp_s.toFixed(3) + 's' : '---'}</span>
-                    <span style={{ color: T.text }}>{entry.msg}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Erase confirmation handler
+  // Erase double-click handler: first click arms for 3 s, second click fires
   function handleErase() {
     if (!confirmErase) {
       setConfirmErase(true);
@@ -106,58 +29,272 @@ export default function FlightLogPanel(props) {
     log.erase();
   }
 
-  // Button style helper (matching Btn from App.jsx)
-  function btnStyle(primary, disabled, danger) {
-    return {
-      fontFamily: MONO,
-      fontSize: 10.5,
-      fontWeight: 700,
-      letterSpacing: 0.8,
-      padding: '6px 14px',
-      borderRadius: 3,
-      border: danger ? '1px solid ' + T.danger : primary ? 'none' : '1px solid ' + T.border,
-      background: disabled ? (primary ? T.muted : 'transparent') : danger ? T.danger + '22' : primary ? T.accent : 'transparent',
-      color: disabled ? (primary ? (T.name === 'dark' ? '#05080c' : '#fff') : T.muted) : danger ? T.danger : primary ? (T.name === 'dark' ? '#05080c' : '#fff') : T.text,
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      opacity: disabled ? 0.45 : 1
-    };
-  }
+  // Bail out cleanly if theme not yet available
+  if (!T) return null;
+
+  // Determine scheme-level props (glow, etc.)
+  var sk = SCHEME_PROPS[T.scheme || 'fusion'] || SCHEME_PROPS.fusion;
+
+  // ---- Computed result values ----
+  var hrCount  = log.result && log.result.hr_entries      ? log.result.hr_entries.length      : 0;
+  var lrCount  = log.result && log.result.lr_entries      ? log.result.lr_entries.length      : 0;
+  var sumCount = log.result && log.result.summary_entries ? log.result.summary_entries.length : 0;
+  var meta     = log.result ? log.result.metadata : null;
+  var events   = log.result && log.result.summary_entries ? log.result.summary_entries : [];
+
+  // ---- Progress values (safe defaults) ----
+  var pct    = (log.progress && log.progress.pct)    || 0;
+  var detail = (log.progress && log.progress.detail) || '';
+  var phase  = (log.progress && log.progress.phase)  || '';
+
+  // ---- Header action buttons ----
+  var headerButtons = (
+    <div style={{ display: 'flex', gap: SPACE.s2 }}>
+      <Btn
+        T={T}
+        kind="primary"
+        size="sm"
+        icon="download"
+        disabled={!conn || log.busy}
+        onClick={log.download}
+      >
+        {log.busy ? '⟳ DOWNLOADING...' : 'DOWNLOAD'}
+      </Btn>
+      <Btn
+        T={T}
+        kind="secondary"
+        size="sm"
+        disabled={!log.result || log.busy}
+        onClick={function () { log.exportCsv('all'); }}
+      >
+        EXPORT CSV
+      </Btn>
+      <Btn
+        T={T}
+        kind={confirmErase ? 'danger' : 'secondary'}
+        size="sm"
+        disabled={!conn || log.busy}
+        onClick={handleErase}
+      >
+        {confirmErase ? '⚠ CONFIRM ERASE' : 'ERASE'}
+      </Btn>
+    </div>
+  );
+
+  // ---- Left column: progress bar + stat tiles ----
+  var leftCol = (
+    <div>
+      {/* Progress header row */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+        marginBottom: SPACE.s2,
+      }}>
+        <Cap T={T} color={T.accent}>HIGH-RATE STREAM · 100 Hz</Cap>
+        <span style={{
+          fontFamily: FONT.mono,
+          fontSize: TYPE.body,
+          fontWeight: 700,
+          color: T.accent,
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          {pct}%
+        </span>
+      </div>
+
+      {/* Progress bar — always rendered; shows 0% when idle */}
+      <div style={{
+        height: 8,
+        background: T.bgEl,
+        borderRadius: RADIUS.pill,
+        overflow: 'hidden',
+        border: '1px solid ' + T.border,
+      }}>
+        <div style={{
+          height: '100%',
+          width: pct + '%',
+          background: T.accent,
+          borderRadius: RADIUS.pill,
+          boxShadow: sk.showGlow ? T.glowSoft(T.accent) : 'none',
+          transition: 'width 200ms ease',
+        }} />
+      </div>
+
+      {/* Detail text (frame count / address) */}
+      <div style={{
+        fontFamily: FONT.mono,
+        fontSize: TYPE.cap,
+        color: T.muted,
+        marginTop: SPACE.s2,
+        fontVariantNumeric: 'tabular-nums',
+        minHeight: 14,
+      }}>
+        {detail}
+      </div>
+
+      {/* Error display — shown when phase=error and not busy */}
+      {phase === 'error' && !log.busy && (
+        <div style={{
+          marginTop: SPACE.s2,
+          padding: SPACE.s2 + 'px ' + SPACE.s3 + 'px',
+          background: T.dangerBg,
+          border: '1px solid ' + T.danger,
+          borderRadius: RADIUS.sm,
+        }}>
+          <span style={{
+            fontFamily: FONT.mono,
+            fontSize: TYPE.cap,
+            color: T.danger,
+          }}>
+            {(log.progress && (log.progress.error || log.progress.detail)) || 'Unknown error'}
+          </span>
+        </div>
+      )}
+
+      {/* Stat tiles — 3-column grid; rendered whenever result exists */}
+      {log.result && !log.busy ? (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr',
+          gap: SPACE.s2,
+          marginTop: SPACE.s4,
+        }}>
+          <StatTile
+            T={T}
+            label="HIGH-RATE"
+            value={hrCount.toLocaleString()}
+            unit="frames"
+            sub="100 Hz · 8 ch"
+          />
+          <StatTile
+            T={T}
+            label="LOW-RATE"
+            value={lrCount.toLocaleString()}
+            unit="frames"
+            sub="10 Hz · 16 ch"
+          />
+          <StatTile
+            T={T}
+            label="EVENTS"
+            value={sumCount.toString()}
+            unit="entries"
+            sub="apogee, deploy, etc"
+            accent
+          />
+        </div>
+      ) : (
+        // Empty state — no harvest yet and not busy
+        !log.busy && !log.progress && (
+          <div style={{
+            marginTop: SPACE.s4,
+            padding: SPACE.s3 + 'px ' + SPACE.s4 + 'px',
+            background: T.bgEl,
+            border: '1px solid ' + T.border,
+            borderRadius: RADIUS.md,
+            fontFamily: FONT.mono,
+            fontSize: TYPE.cap,
+            color: T.faint,
+            textAlign: 'center',
+            letterSpacing: '0.08em',
+          }}>
+            NO FLIGHT LOG HARVESTED YET
+          </div>
+        )
+      )}
+
+      {/* Flash address metadata row */}
+      {meta && !log.busy && (
+        <div style={{
+          marginTop: SPACE.s3,
+          fontFamily: FONT.mono,
+          fontSize: TYPE.cap,
+          color: T.faint,
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          {'HR @ 0x' + (meta.hr_addr || 0).toString(16).toUpperCase().padStart(8, '0') +
+           ' · LR @ 0x' + (meta.lr_addr || 0).toString(16).toUpperCase().padStart(8, '0') +
+           ' · Summary: ' + (meta.summary_bytes || 0).toLocaleString() + ' bytes'}
+        </div>
+      )}
+    </div>
+  );
+
+  // ---- Right column: scrollable event log ----
+  var rightCol = (
+    <div style={{
+      background: T.bgEl,
+      border: '1px solid ' + T.border,
+      borderRadius: RADIUS.md,
+      maxHeight: 320,
+      overflowY: 'auto',
+    }}>
+      {/* Sticky header */}
+      <div style={{
+        padding: SPACE.s2 + 'px ' + SPACE.s3 + 'px',
+        borderBottom: '1px solid ' + T.border,
+        position: 'sticky',
+        top: 0,
+        background: T.bgEl,
+        zIndex: 1,
+      }}>
+        <Cap T={T}>EVENT LOG · LAST FLIGHT</Cap>
+      </div>
+
+      {events.length > 0 ? (
+        events.map(function (entry, i) {
+          return (
+            <div key={i} style={{
+              display: 'flex',
+              gap: SPACE.s3,
+              padding: SPACE.s2 + 'px ' + SPACE.s3 + 'px',
+              fontFamily: FONT.mono,
+              fontSize: TYPE.cap,
+              borderBottom: i < events.length - 1 ? '1px solid ' + T.border : 'none',
+            }}>
+              <span style={{
+                color: T.accent,
+                minWidth: 60,
+                fontVariantNumeric: 'tabular-nums',
+                fontWeight: 600,
+                flexShrink: 0,
+              }}>
+                {entry.timestamp_s != null ? entry.timestamp_s.toFixed(3) + 's' : '---'}
+              </span>
+              <span style={{ color: T.text, fontWeight: 500 }}>
+                {entry.msg}
+              </span>
+            </div>
+          );
+        })
+      ) : (
+        <div style={{
+          padding: SPACE.s4 + 'px ' + SPACE.s3 + 'px',
+          fontFamily: FONT.mono,
+          fontSize: TYPE.cap,
+          color: T.faint,
+          textAlign: 'center',
+          letterSpacing: '0.06em',
+        }}>
+          NO EVENTS
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div style={{ marginTop: 16 }}>
-      <div style={{ padding: '12px 16px', background: T.bgPanel, borderRadius: 5, border: '1px solid ' + T.border, boxShadow: T.shadow }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontFamily: COND, fontSize: 11, fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: 2 }}>Flight Log</div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              onClick={log.download}
-              disabled={!conn || log.busy}
-              style={btnStyle(true, !conn || log.busy, false)}
-            >
-              {log.busy ? '\u27F3 DOWNLOADING...' : '\u25BC DOWNLOAD'}
-            </button>
-            <button
-              onClick={function () { log.exportCsv('all'); }}
-              disabled={!log.result || log.busy}
-              style={btnStyle(false, !log.result || log.busy, false)}
-            >
-              EXPORT CSV
-            </button>
-            <button
-              onClick={handleErase}
-              disabled={!conn || log.busy}
-              style={btnStyle(false, !conn || log.busy, confirmErase)}
-            >
-              {confirmErase ? '\u26A0 CONFIRM ERASE' : 'ERASE'}
-            </button>
-          </div>
+    <div style={{ marginTop: SPACE.s4 }}>
+      <Panel T={T} title="FLIGHT LOG · HARVEST" right={headerButtons}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1.4fr 1fr',
+          gap: SPACE.s4,
+          alignItems: 'start',
+        }}>
+          {leftCol}
+          {rightCol}
         </div>
-        {progressBar}
-        {errorDisplay}
-        {resultDisplay}
-      </div>
+      </Panel>
     </div>
   );
 }
