@@ -9,7 +9,6 @@ import { Icon } from '../design/icons.jsx';
 
 import { SerialPortPicker } from '../components/SerialPortPicker.jsx';
 import FlightConfigEditor from '../components/FlightConfigEditor.jsx';
-import SensorDiagnostics from '../components/SensorDiagnostics.jsx';
 import { useFlightConfig } from '../hooks/useFlightConfig.js';
 
 import PyroEditor from '../pyro/PyroEditor.jsx';
@@ -22,8 +21,20 @@ import { toLogicGraphIR } from '../pyro/ir.js';
 // ---------------------------------------------------------------------------
 function SerialBar({ serial }) {
   const T = useTheme();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const stored = localStorage.getItem('casper-mc-serial-bar-collapsed');
+      return stored === null ? true : stored === 'true';
+    } catch { return true; }
+  });
   const [autoCollapsed, setAutoCollapsed] = useState(false);
+
+  // Persist collapse state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('casper-mc-serial-bar-collapsed', String(collapsed));
+    } catch { /* ignore */ }
+  }, [collapsed]);
 
   // Auto-collapse once FC becomes connected, but only the first time
   useEffect(() => {
@@ -36,14 +47,14 @@ function SerialBar({ serial }) {
     }
   }, [serial.fc_connected, autoCollapsed]);
 
-  if (collapsed) {
-    const status =
-      serial.fc_connected && serial.gs_connected ? 'FC + GS CONNECTED'
-      : serial.fc_connected ? 'FC CONNECTED · DIRECT'
-      : serial.gs_connected ? 'GS CONNECTED · RELAY'
-      : 'NO LINK';
-    const live = serial.fc_connected || serial.gs_connected;
+  const status =
+    serial.fc_connected && serial.gs_connected ? 'FC + GS CONNECTED'
+    : serial.fc_connected ? 'FC CONNECTED · DIRECT'
+    : serial.gs_connected ? 'GS CONNECTED · RELAY'
+    : 'NO LINK';
+  const live = serial.fc_connected || serial.gs_connected;
 
+  if (collapsed) {
     return (
       <button
         onClick={() => setCollapsed(false)}
@@ -68,35 +79,41 @@ function SerialBar({ serial }) {
         <Cap color={T.muted} style={{ marginRight: 4 }}>SERIAL</Cap>
         <span style={{ flex: 1, color: T.strong, fontWeight: 600 }}>{status}</span>
         <Pill color={live ? T.accent : T.muted}>{live ? 'LIVE' : 'OFFLINE'}</Pill>
-        <span style={{ color: T.muted, marginLeft: 6 }}>{'▾ expand'}</span>
+        <span style={{ color: T.muted, marginLeft: 6, fontSize: 13 }}>{'▸'}</span>
       </button>
     );
   }
 
   return (
-    <div style={{ marginBottom: SPACE.s4, position: 'relative' }}>
-      <SerialPortPicker serial={serial} theme={T} />
+    <div style={{ marginBottom: SPACE.s4 }}>
+      {/* Clickable header bar — toggles collapse */}
       <button
         onClick={() => setCollapsed(true)}
         title="Collapse serial picker"
         style={{
-          position: 'absolute',
-          top: 8,
-          right: 96,
-          padding: '3px 10px',
-          fontFamily: FONT.mono,
-          fontSize: 9,
-          fontWeight: 700,
-          color: T.muted,
-          background: 'transparent',
-          border: `1px solid ${T.border}`,
-          borderRadius: 3,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '6px 14px',
+          background: T.bgPanel,
+          border: `1px solid ${live ? T.accentRing : T.border}`,
+          borderBottom: 'none',
+          borderRadius: `${RADIUS.md} ${RADIUS.md} 0 0`,
           cursor: 'pointer',
-          letterSpacing: 0.5,
+          fontFamily: FONT.mono,
+          fontSize: 10,
+          color: T.muted,
+          textAlign: 'left',
         }}
       >
-        COLLAPSE
+        <Dot color={live ? T.accent : T.muted} pulse={live} size={7} />
+        <Cap color={T.muted}>SERIAL</Cap>
+        <span style={{ flex: 1, color: T.strong, fontWeight: 600, fontSize: 11 }}>{status}</span>
+        <Pill color={live ? T.accent : T.muted}>{live ? 'LIVE' : 'OFFLINE'}</Pill>
+        <span style={{ color: T.muted, marginLeft: 8, fontSize: 13 }}>{'▾'}</span>
       </button>
+      <SerialPortPicker serial={serial} theme={T} />
     </div>
   );
 }
@@ -276,6 +293,18 @@ export default function SetupTab({ serial }) {
       {/* Serial picker */}
       <SerialBar serial={serial} />
 
+      {/* Pyro editor */}
+      <div style={{ marginBottom: SPACE.s4 }}>
+        <PyroEditor
+          state={pyroState}
+          dispatch={dispatch}
+          onCompile={handleUpload}
+          onExport={handleExport}
+          onImport={handleImport}
+          height="calc(100vh - 480px)"
+        />
+      </div>
+
       {/* Flight configuration editor */}
       <div style={{ marginBottom: SPACE.s4 }}>
         <FlightConfigEditor
@@ -284,21 +313,6 @@ export default function SetupTab({ serial }) {
           onReset={resetFlightConfig}
         />
       </div>
-
-      {/* Sensor bus diagnostics */}
-      <div style={{ marginBottom: SPACE.s4 }}>
-        <SensorDiagnostics />
-      </div>
-
-      {/* Pyro editor */}
-      <PyroEditor
-        state={pyroState}
-        dispatch={dispatch}
-        onCompile={handleUpload}
-        onExport={handleExport}
-        onImport={handleImport}
-        height="calc(100vh - 480px)"
-      />
     </div>
   );
 }
