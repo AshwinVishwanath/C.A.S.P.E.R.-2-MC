@@ -297,7 +297,7 @@ export default function SetupTab({ serial }) {
         onCompile={handleUpload}
         onExport={handleExport}
         onImport={handleImport}
-        height={720}
+        height="calc(100vh - 480px)"
       />
     </div>
   );

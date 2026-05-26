@@ -128,14 +128,15 @@ export function Node({
         />
       )}
 
-      {/* Node title */}
+      {/* Node title — positioned below the 4px category bar with clear padding */}
       <text
-        x={NODE_PAD} y={20}
+        x={NODE_PAD} y={22}
         fill={T.strong}
         fontFamily={FONT.sans}
         fontSize="12"
         fontWeight="700"
         letterSpacing="0.04em"
+        dominantBaseline="auto"
         pointerEvents="none"
       >
         {spec.label}
@@ -148,6 +149,7 @@ export function Node({
           fill={T.muted}
           fontFamily={FONT.mono}
           fontSize="9"
+          dominantBaseline="auto"
           pointerEvents="none"
         >
           {spec.sub}
