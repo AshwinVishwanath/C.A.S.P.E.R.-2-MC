@@ -2,6 +2,67 @@
 
 Ground control station for the C.A.S.P.E.R.-2 (Control and Stability Package for Experimental Rocketry) flight computer. Electron desktop application that communicates with the STM32H750 FC over USB serial, displaying real-time telemetry and providing pyro channel command-and-control.
 
+---
+
+## Closed beta — testers start here
+
+Thanks for trying this out. It's an early build, so expect rough edges.
+
+**You do not need to install Node, npm, Git, or anything else.** This is a single self-contained `.exe` file. Download it, double-click it, the app opens. That's it.
+
+Everything below the "Developer setup" heading further down is only for people working on the source code of the app itself. Beta testers can ignore it.
+
+### Download
+
+Grab the latest `casper-mc-<version>-portable.exe` from the [Releases page](../../releases) of this repo. The file is around 75 MB. That single file is the whole app — Electron runtime, dependencies, native modules, everything is bundled inside.
+
+### Run
+
+Double-click the `.exe`. No install wizard, no admin rights needed, nothing gets added to your Start Menu or registry. You can keep the file anywhere — Downloads folder, Desktop, USB stick, doesn't matter.
+
+Windows will pop up a **"Windows protected your PC"** SmartScreen warning because the build isn't code-signed (signing costs ~$300/yr and isn't worth it for a closed beta). To run it:
+
+1. Click **More info**
+2. Click **Run anyway**
+
+Windows remembers this decision for that file. If you redownload a newer version, you'll see the warning again.
+
+The portable `.exe` extracts itself to a temporary folder when you launch it and cleans up when you close the app. To "uninstall," just delete the `.exe`.
+
+### What you'll see
+
+The dashboard opens and shows the offline state. Without a Flight Computer or Ground Station plugged in via USB, there's no live telemetry. This is the **v0.1.0 beta** — a real OpenRocket-driven sim mode is coming in v0.2.0 so you can see the dashboard with simulated flight data.
+
+For now, useful things to give feedback on:
+
+- Overall layout and readability
+- Font sizes, contrast, button targets
+- The connection bar and serial port picker UX
+- Anything that looks broken, cropped, or unreadable on your screen size
+- App startup time and responsiveness
+
+### Sending feedback
+
+Check Project Sunride's `personal-projects` channel on Discord for the **C.A.S.P.E.R. 2 Mission Control** thread and drop notes there. Useful info to include:
+
+- Windows version (`Win+R` → `winver`)
+- Screen resolution
+- Screenshot if you can
+- What you were doing when something went wrong
+
+### Known limitations (v0.1.0-beta.1)
+
+- No telemetry visible without hardware (sim mode lands in v0.2.0)
+- No auto-update — you'll redownload each release
+- No code signing — SmartScreen warning on every fresh download
+- Windows only (Mac/Linux not built yet)
+
+---
+
+## Developer setup
+
+Everything below is for working on the app itself, not for beta testing.
+
 ## Features
 
 - **Real-time telemetry** at 10Hz: altitude, velocity, attitude (quaternion + Euler), Mach, dynamic pressure, battery
