@@ -25,7 +25,9 @@ export function ThemeProvider({ tweaks, children }) {
     document.body.style.background = theme.bg;
     document.body.style.color = theme.text;
     document.body.style.margin = '0';
-  }, [theme.bg, theme.text]);
+    document.body.classList.toggle('cmc-light', theme.name === 'light');
+    document.body.classList.toggle('cmc-dark',  theme.name !== 'light');
+  }, [theme.bg, theme.text, theme.name]);
 
   return (
     <ThemeCtx.Provider value={{ theme, tweaks }}>

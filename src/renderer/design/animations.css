@@ -60,7 +60,8 @@
   50%       { opacity: 0.55; transform: scale(0.94); }
 }
 
-/* ── Global scrollbar styling (dark theme) ─────────────────────────────── */
+/* ── Global scrollbar styling ───────────────────────────────────────────── */
+/* Default: dark theme (also applies pre-mount before body class is set)    */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -76,7 +77,18 @@
   background: oklch(38% 0.012 240);
 }
 
-html, body {
+html {
   scrollbar-color: oklch(28% 0.012 240) transparent;
   scrollbar-width: thin;
+}
+
+/* Light theme overrides */
+.cmc-light ::-webkit-scrollbar-thumb {
+  background: oklch(78% 0.012 75);
+}
+.cmc-light ::-webkit-scrollbar-thumb:hover {
+  background: oklch(68% 0.012 75);
+}
+.cmc-light {
+  scrollbar-color: oklch(78% 0.012 75) transparent;
 }
