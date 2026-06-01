@@ -13,7 +13,10 @@
  * @module ipc/handlers
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { promises as fsp } from 'fs';
+import { parse_openrocket_csv } from '../sim/openrocket_csv';
+import { phase_to_fsm, type SimSamplePush } from '../sim/sim_types';
 import type { TelemetryStore } from '../store/telemetry_store';
 import type { CacMachine } from '../command/cac_machine';
 import type { FcUsb } from '../transport/fc_usb';
@@ -53,7 +56,10 @@ import {
   CH_LOG_PROGRESS,
   CH_EXPORT_LOG_CSV,
   CH_UPLOAD_LOGIC,
-  CH_COMPILE_LOGIC
+  CH_COMPILE_LOGIC,
+  CH_SIM_LOAD,
+  CH_SIM_PUSH,
+  CH_SIM_ACTIVE
 } from './channels';
 
 // ---------------------------------------------------------------------------
@@ -499,6 +505,76 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
   ipcMain.on(CH_CMD_SIM_FLIGHT, on_sim_flight);
 
   // -----------------------------------------------------------------------
+  // 12. OpenRocket sim mode — load a flight file, replay it into the store
+  // -----------------------------------------------------------------------
+
+  /** A real serial link owns the store — sim must not write while one is up. */
+  const real_link_connected = (): boolean => fc.is_connected() || gs.is_connected();
+
+  ipcMain.handle(CH_SIM_LOAD, async () => {
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Load Flight Simulation',
+      filters: [
+        { name: 'Flight sim (CSV / OpenRocket)', extensions: ['csv', 'ork'] },
+        { name: 'OpenRocket CSV export', extensions: ['csv'] },
+        { name: 'OpenRocket design', extensions: ['ork'] }
+      ],
+      properties: ['openFile']
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, canceled: true };
+    }
+    const path = result.filePaths[0];
+    try {
+      if (path.toLowerCase().endsWith('.ork')) {
+        return {
+          ok: false,
+          error:
+            'OpenRocket .ork import is coming in a later version — for now, export ' +
+            'simulation data as CSV from OpenRocket (File → Export) and load that.'
+        };
+      }
+      const text = await fsp.readFile(path, 'utf-8');
+      const profile = parse_openrocket_csv(text);
+      const filename = path.split(/[\\/]/).pop() || path;
+      return { ok: true, profile, filename };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  });
+
+  const on_sim_push = (_event: Electron.IpcMainEvent, sample: SimSamplePush): void => {
+    try {
+      if (real_link_connected() || !sample) return;
+      store.update_from_sim({
+        alt_m: sample.alt,
+        vel_mps: sample.vel,
+        mach: sample.mach,
+        fsm_state: phase_to_fsm(sample.phase),
+        flight_time_s: sample.t,
+        tilt_deg: sample.tilt,
+        fired: sample.fired
+      });
+    } catch (err) {
+      console.error('[IPC] sim_push error:', err instanceof Error ? err.message : err);
+    }
+  };
+  ipcMain.on(CH_SIM_PUSH, on_sim_push);
+
+  const on_sim_active = (_event: Electron.IpcMainEvent, active: boolean): void => {
+    try {
+      if (real_link_connected()) return;
+      store.set_sim_active(!!active);
+    } catch (err) {
+      console.error('[IPC] sim_active error:', err instanceof Error ? err.message : err);
+    }
+  };
+  ipcMain.on(CH_SIM_ACTIVE, on_sim_active);
+
+  // -----------------------------------------------------------------------
   // Cleanup function
   // -----------------------------------------------------------------------
 
@@ -516,6 +592,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeHandler(CH_EXPORT_LOG_CSV);
     ipcMain.removeHandler(CH_UPLOAD_LOGIC);
     ipcMain.removeHandler(CH_COMPILE_LOGIC);
+    ipcMain.removeHandler(CH_SIM_LOAD);
 
     // Remove fire-and-forget listeners
     ipcMain.removeListener(CH_SCAN_PORTS, on_scan_ports);
@@ -531,5 +608,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeListener(CH_RUN_DIAG, on_run_diag);
     ipcMain.removeListener(CH_ERASE_LOG, on_erase_log);
     ipcMain.removeListener(CH_CMD_SIM_FLIGHT, on_sim_flight);
+    ipcMain.removeListener(CH_SIM_PUSH, on_sim_push);
+    ipcMain.removeListener(CH_SIM_ACTIVE, on_sim_active);
   };
 }

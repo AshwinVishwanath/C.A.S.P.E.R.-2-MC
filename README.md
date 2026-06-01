@@ -52,7 +52,7 @@ Check Project Sunride's `personal-projects` channel on Discord for the **C.A.S.P
 
 ### Known limitations (v0.1.0-beta.1)
 
-- No telemetry visible without hardware (sim mode lands in v0.2.0)
+- No telemetry without hardware *or* an OpenRocket sim loaded (see Simulation mode above)
 - No auto-update — you'll redownload each release
 - No code signing — SmartScreen warning on every fresh download
 - Windows only (Mac/Linux not built yet)

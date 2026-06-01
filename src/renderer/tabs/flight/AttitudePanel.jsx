@@ -23,6 +23,11 @@ export default function AttitudePanel({ tel }) {
   const rpyBufRef = useRef([]);
   const [rpyHistory, setRpyHistory] = useState([]);
 
+  // Accumulate one RPY sample per telemetry update. Keyed on flight time (tel.t)
+  // — which advances on every packet / sim tick — so history fills even when the
+  // attitude is momentarily constant (e.g. a perfectly vertical ascent). Keying
+  // only on roll/pitch/yaw would leave the graph stuck on "AWAITING DATA" for an
+  // unchanging attitude.
   useEffect(() => {
     const buf = rpyBufRef.current;
     buf.push({
@@ -33,7 +38,7 @@ export default function AttitudePanel({ tel }) {
     if (buf.length > RPY_DEPTH) buf.shift();
     setRpyHistory(buf.slice());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tel.roll, tel.pitch, tel.yaw]);
+  }, [tel.t, tel.roll, tel.pitch, tel.yaw]);
 
   return (
     <Panel title="ATTITUDE · QUATERNION" padded={false}>

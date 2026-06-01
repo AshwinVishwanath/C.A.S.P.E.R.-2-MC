@@ -10,6 +10,7 @@ import useTelemetry from './hooks/use_telemetry';
 import useDiagnostics from './hooks/use_diagnostics';
 import useSerial from './hooks/use_serial';
 import useCommand from './hooks/use_command';
+import useFlightSim from './hooks/use_flight_sim';
 
 import { useTweaks } from './design/useTweaks.js';
 import { ThemeProvider, useTheme } from './design/ThemeContext.jsx';
@@ -43,6 +44,7 @@ export default function App() {
   const serial = useSerial();
   const command = useCommand();
   const diag = useDiagnostics();
+  const flightSim = useFlightSim();
 
   return (
     <ThemeProvider tweaks={tweaks}>
@@ -53,6 +55,7 @@ export default function App() {
         serial={serial}
         command={command}
         diag={diag}
+        flightSim={flightSim}
       />
     </ThemeProvider>
   );
@@ -61,7 +64,7 @@ export default function App() {
 // ---------------------------------------------------------------------------
 // Shell — runs inside ThemeProvider so useTheme() works
 // ---------------------------------------------------------------------------
-function Shell({ tweaks, setTweak, telemetry, serial, command, diag }) {
+function Shell({ tweaks, setTweak, telemetry, serial, command, diag, flightSim }) {
   const T = useTheme();
   const sk = SCHEME_PROPS[T.scheme] || SCHEME_PROPS.fusion;
 
@@ -118,9 +121,9 @@ function Shell({ tweaks, setTweak, telemetry, serial, command, diag }) {
         <Sidebar activeTab={activeTab} onChange={setActiveTab} />
 
         <main style={{ flex: 1, overflow: 'auto', position: 'relative', background: 'transparent' }}>
-          {activeTab === 'setup'    && <SetupTab serial={serial} />}
+          {activeTab === 'setup'    && <SetupTab serial={serial} flightSim={flightSim} />}
           {activeTab === 'test'     && <TestTab tel={telemetry} diag={diag} cmd={command} />}
-          {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} />}
+          {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} flightSim={flightSim} />}
           {activeTab === 'tracking' && <TrackTab tel={telemetry} serial={serial} />}
         </main>
       </div>

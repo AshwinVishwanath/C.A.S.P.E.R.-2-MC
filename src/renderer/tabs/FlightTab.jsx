@@ -193,7 +193,7 @@ function GpsLockPanel({ tel }) {
 // ---------------------------------------------------------------------------
 // FlightTab
 // ---------------------------------------------------------------------------
-export default function FlightTab({ tel, cmd, serial }) {
+export default function FlightTab({ tel, cmd, serial, flightSim }) {
   const T = useTheme();
   const tweaks = useTweaksValue();
   const scheme = tweaks.scheme;
@@ -319,7 +319,7 @@ export default function FlightTab({ tel, cmd, serial }) {
       </div>
 
       {/* Right rail */}
-      <RightRail tel={t} cmd={cmd} />
+      <RightRail tel={t} cmd={cmd} flightSim={flightSim} />
     </div>
   );
 }

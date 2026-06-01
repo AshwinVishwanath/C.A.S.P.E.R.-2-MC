@@ -30,6 +30,29 @@ export const CH_SERIAL_PORTS = 'casper:serial-ports';
 export const CH_LOG_PROGRESS = 'casper:log-progress';
 
 // ---------------------------------------------------------------------------
+// Simulation (OpenRocket-driven sim mode)
+// ---------------------------------------------------------------------------
+
+/**
+ * Load a flight simulation file. Opens a file dialog, parses the selection,
+ * and returns `{ ok, profile, filename }` or `{ ok: false, error }`.
+ * Renderer → Main invoke. Args: none.
+ */
+export const CH_SIM_LOAD = 'casper:sim-load';
+
+/**
+ * Push one playback sample into the telemetry store so the dashboard animates.
+ * Renderer → Main fire-and-forget. Args: (sample: SimSamplePush).
+ */
+export const CH_SIM_PUSH = 'casper:sim-push';
+
+/**
+ * Mark simulation active/inactive (drives the "live" indicators; resets the
+ * store on deactivate). Renderer → Main fire-and-forget. Args: (active: boolean).
+ */
+export const CH_SIM_ACTIVE = 'casper:sim-active';
+
+// ---------------------------------------------------------------------------
 // Renderer -> Main invoke channels (expect return value)
 // ---------------------------------------------------------------------------
 

@@ -17,6 +17,8 @@ export class TelemetryStore {
   private snapshot: TelemetrySnapshot;
   private subscribers: Set<(s: TelemetrySnapshot) => void> = new Set();
   private last_valid_ms: number = 0;
+  /** True while an OpenRocket sim is driving the store (suppresses stale). */
+  private sim_active: boolean = false;
   private euler_initialised: boolean = false;
   private prev_roll: number = 0;
   private prev_pitch: number = 0;
@@ -166,6 +168,89 @@ export class TelemetryStore {
   }
 
   /**
+   * Ingest one OpenRocket simulation playback sample. Mirrors
+   * {@link update_from_fc_fast} but is fed by the renderer's sim clock
+   * instead of a serial transport, and additionally sets Mach/dynamic
+   * pressure (which FC direct mode does not carry) plus a synthesised
+   * attitude so the 3D panel leans with the flight.
+   *
+   * @param s - Decoded sim sample.
+   */
+  update_from_sim(s: {
+    alt_m: number;
+    vel_mps: number;
+    mach: number;
+    fsm_state: FsmState;
+    flight_time_s: number;
+    tilt_deg: number;
+    fired?: [boolean, boolean, boolean, boolean];
+  }): void {
+    const snap = this.snapshot;
+    snap.alt_m = s.alt_m;
+    snap.vel_mps = s.vel_mps;
+    snap.mach = s.mach;
+    // Dynamic pressure from a simple exponential atmosphere (rho0 * e^-h/H).
+    const rho = 1.225 * Math.exp(-Math.max(0, s.alt_m) / 8500);
+    snap.qbar_pa = 0.5 * rho * s.vel_mps * s.vel_mps;
+    snap.flight_time_s = s.flight_time_s;
+    snap.seq = (snap.seq + 1) & 0xFF;
+    snap.batt_v = 7.4; // nominal so the battery tiles read sane
+    snap.fsm_state = s.fsm_state;
+
+    // Synthesise attitude: lean the rocket over by `tilt` as a pitch angle.
+    const half = (s.tilt_deg * Math.PI) / 180 / 2;
+    snap.quat = [Math.cos(half), 0, Math.sin(half), 0];
+    const [roll, pitch, yaw] = quat_to_euler_deg(snap.quat);
+    const [froll, fpitch, fyaw] = this._filter_euler(roll, pitch, yaw);
+    snap.roll_deg = froll;
+    snap.pitch_deg = fpitch;
+    snap.yaw_deg = fyaw;
+
+    // Pyro: continuity present, armed once off the pad, fired from the evaluator.
+    const armed = s.fsm_state !== FsmState.Pad;
+    for (let i = 0; i < 4; i++) {
+      snap.pyro[i].continuity = true;
+      snap.pyro[i].armed = armed;
+      if (s.fired) snap.pyro[i].fired = s.fired[i];
+    }
+
+    this._push_ring(snap.buf_alt, snap.alt_m);
+    this._push_ring(snap.buf_vel, snap.vel_mps);
+    this._push_ring(snap.buf_qbar, snap.qbar_pa);
+    if (snap.alt_m > snap.apogee_alt_m) snap.apogee_alt_m = snap.alt_m;
+
+    snap.stale = false;
+    snap.stale_since_ms = 0;
+    this.last_valid_ms = Date.now();
+    this._notify();
+  }
+
+  /**
+   * Mark simulation mode active or inactive. Activating sets the link
+   * "live" so the dashboard reads as connected; deactivating resets all
+   * telemetry to defaults (preserving the event log), like a disconnect.
+   *
+   * @param active - Whether sim playback is active.
+   */
+  set_sim_active(active: boolean): void {
+    this.sim_active = active;
+    if (active) {
+      this.snapshot.fc_conn = true;
+      this.snapshot.protocol_ok = true;
+      this.snapshot.stale = false;
+      this.snapshot.stale_since_ms = 0;
+      this._notify();
+      return;
+    }
+    const events = this.snapshot.events;
+    this.snapshot = JSON.parse(JSON.stringify(DEFAULT_SNAPSHOT));
+    this.snapshot.events = events;
+    this.euler_initialised = false;
+    this.last_valid_ms = 0;
+    this._notify();
+  }
+
+  /**
    * Update connection state for a given link. When a link disconnects,
    * all telemetry values are reset to defaults while preserving the
    * event log and the other link's connection flag.
@@ -217,6 +302,9 @@ export class TelemetryStore {
    * @param now_ms - Current wall-clock time in milliseconds (Date.now()).
    */
   tick_stale(now_ms: number): void {
+    // Sim playback has no radio link to lose — never mark sim data stale, so
+    // attitude/3D stays visible whether the flight is playing or paused.
+    if (this.sim_active) return;
     if (this.last_valid_ms === 0) return; // No data received yet
     const elapsed = now_ms - this.last_valid_ms;
     if (elapsed > STALE_THRESHOLD_MS) {

@@ -23,16 +23,20 @@ export const SIM_PROFILE = [
 ];
 
 // ---------------------------------------------------------------------------
-// sampleProfile(t) — linear interpolate between adjacent keyframes
-//   Returns a sample object compatible with evaluateGraph expectations.
+// sampleProfile(t, profile) — linear interpolate between adjacent keyframes
+//   `profile` defaults to the built-in synthetic SIM_PROFILE, but an imported
+//   OpenRocket profile (same keyframe shape) can be passed to replay a real
+//   flight. Returns a sample object compatible with evaluateGraph expectations.
 // ---------------------------------------------------------------------------
-export function sampleProfile(t) {
-  if (t <= SIM_PROFILE[0].t) return { ...SIM_PROFILE[0] };
-  for (let i = 1; i < SIM_PROFILE.length; i++) {
-    if (t < SIM_PROFILE[i].t) {
-      const a = SIM_PROFILE[i - 1];
-      const b = SIM_PROFILE[i];
-      const f = (t - a.t) / (b.t - a.t);
+export function sampleProfile(t, profile = SIM_PROFILE) {
+  if (!profile || profile.length === 0) return null;
+  if (t <= profile[0].t) return { ...profile[0] };
+  for (let i = 1; i < profile.length; i++) {
+    if (t < profile[i].t) {
+      const a = profile[i - 1];
+      const b = profile[i];
+      const span = (b.t - a.t) || 1;
+      const f = (t - a.t) / span;
       return {
         phase: a.phase,
         t,
@@ -44,7 +48,7 @@ export function sampleProfile(t) {
       };
     }
   }
-  return { ...SIM_PROFILE[SIM_PROFILE.length - 1] };
+  return { ...profile[profile.length - 1] };
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +72,7 @@ function cmpOp(op, a, b) {
 //   Returns Map<nodeId, {[portId]: value}>
 //   Cycle guard: if a node is currently being evaluated, return {} (zeroes/false)
 // ---------------------------------------------------------------------------
-export function evaluateGraph(state, sample) {
+export function evaluateGraph(state, sample, profile = SIM_PROFILE) {
   const { nodes, edges } = state;
 
   // Build reverse edge map: nodeId → [edge]  (edges arriving at this node)
@@ -80,7 +84,7 @@ export function evaluateGraph(state, sample) {
 
   // Find the phase start time (first keyframe with this phase)
   const phaseStart = (() => {
-    const kf = SIM_PROFILE.find(p => p.phase === sample.phase);
+    const kf = (profile || SIM_PROFILE).find(p => p.phase === sample.phase);
     return kf ? kf.t : 0;
   })();
 

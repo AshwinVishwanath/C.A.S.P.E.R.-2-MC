@@ -72,7 +72,7 @@ function Sep({ T }) {
  *   height?: number,
  * }} props
  */
-function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExport, onImport, height = 720 }) {
+function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExport, onImport, flightSim, height = 720 }) {
   const T = useTheme();
   const scheme = T.scheme || 'fusion';
   const sk = SCHEME_PROPS[scheme] || SCHEME_PROPS.fusion;
@@ -117,21 +117,29 @@ function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExp
   // -------------------------------------------------------------------------
   const validation = useMemo(() => validateGraph(state), [state.nodes, state.edges]);
 
-  const simSample = useMemo(
-    () => simOn ? sampleProfile(simT) : null,
-    [simOn, simT]
-  );
+  // External (OpenRocket) sim driving. When a flight is loaded in the Setup
+  // tab's Flight Sim box, it takes priority over the built-in synthetic
+  // SIM_PROFILE driven by the internal ▶ Simulate clock.
+  const extProfile = flightSim && flightSim.profile ? flightSim.profile.samples : null;
+  const extActive = !!extProfile;
+  const extSample = flightSim ? flightSim.sample : null;
+
+  const activeProfile = extActive ? extProfile : SIM_PROFILE;
+  const simActive = extActive || simOn;
+  const simSample = extActive ? extSample : (simOn ? sampleProfile(simT) : null);
+  const simTime = extActive ? (extSample ? extSample.t : 0) : simT;
+  const simEndT = activeProfile[activeProfile.length - 1].t;
 
   const simValues = useMemo(
-    () => simOn && simSample ? evaluateGraph(state, simSample) : null,
-    [simOn, simSample, state.nodes, state.edges]
+    () => (simSample ? evaluateGraph(state, simSample, activeProfile) : null),
+    [simSample, state.nodes, state.edges, activeProfile]
   );
 
   // -------------------------------------------------------------------------
   // Sim playback loop
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (!simOn || !simPlaying) return;
+    if (extActive || !simOn || !simPlaying) return;
     const endT = SIM_PROFILE[SIM_PROFILE.length - 1].t;
     let raf, last = performance.now();
     const tick = (now) => {
@@ -150,19 +158,19 @@ function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExp
 
   // Fire event log tracking
   useEffect(() => {
-    if (!simOn || !simValues) return;
+    if (!simActive || !simValues) return;
     const newFired = {};
     state.nodes.filter((n) => isPyro(n.kind)).forEach((n) => {
       newFired[n.id] = !!(simValues.get ? simValues.get(n.id)?.fire : simValues[n.id]?.fire);
       if (newFired[n.id] && !prevFiredRef.current[n.id]) {
         setFiredLog((prev) => [
           ...prev,
-          { id: Math.random(), t: simT, ch: n.kind.slice(-1), role: n.params?.role || '' },
+          { id: Math.random(), t: simTime, ch: n.kind.slice(-1), role: n.params?.role || '' },
         ]);
       }
     });
     prevFiredRef.current = newFired;
-  }, [simValues, simT]);
+  }, [simValues, simTime]);
 
   // -------------------------------------------------------------------------
   // Zoom to fit
@@ -456,18 +464,27 @@ function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExp
           background: T.bgPanel + 'ee',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          border: '1px solid ' + (simOn ? T.accent : T.border),
+          border: '1px solid ' + (simActive ? T.accent : T.border),
           borderRadius: RADIUS.sm,
           padding: 4,
         }}>
-          <ToolBtn T={T} active={simOn} accent
-            onClick={() => {
-              setSimOn((s) => !s);
-              setSimT(0); setSimPlaying(false);
-              setFiredLog([]); prevFiredRef.current = {};
+          {extActive ? (
+            <span style={{
+              fontFamily: FONT.mono, fontSize: 11, fontWeight: 700,
+              color: T.accent, padding: '5px 9px', whiteSpace: 'nowrap',
             }}>
-            {simOn ? '■ Stop' : '▶ Simulate'}
-          </ToolBtn>
+              ▶ OPENROCKET SIM
+            </span>
+          ) : (
+            <ToolBtn T={T} active={simOn} accent
+              onClick={() => {
+                setSimOn((s) => !s);
+                setSimT(0); setSimPlaying(false);
+                setFiredLog([]); prevFiredRef.current = {};
+              }}>
+              {simOn ? '■ Stop' : '▶ Simulate'}
+            </ToolBtn>
+          )}
           {onCompile && (
             <>
               <Sep T={T} />
@@ -534,7 +551,7 @@ function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExp
         </div>
 
         {/* ---- Sim drawer ---- */}
-        {simOn && simSample && (
+        {simActive && simSample && (
           <div style={{
             position: 'absolute', bottom: 28, left: 12, right: 12, zIndex: 4,
             background: T.bgPanel + 'f5',
@@ -547,21 +564,33 @@ function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExp
             display: 'flex', flexDirection: 'column', gap: 6,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <ToolBtn T={T} accent onClick={() => setSimPlaying((p) => !p)}>
-                {simPlaying ? '❚❚' : '▶'}
+              <ToolBtn T={T} accent onClick={() => {
+                if (extActive) {
+                  if (flightSim.playing) flightSim.pause(); else flightSim.play();
+                } else {
+                  setSimPlaying((p) => !p);
+                }
+              }}>
+                {(extActive ? flightSim.playing : simPlaying) ? '❚❚' : '▶'}
               </ToolBtn>
               <ToolBtn T={T} onClick={() => {
-                setSimT(0); setFiredLog([]); prevFiredRef.current = {}; setSimPlaying(false);
+                setFiredLog([]); prevFiredRef.current = {};
+                if (extActive) { flightSim.restart(); }
+                else { setSimT(0); setSimPlaying(false); }
               }}>↺</ToolBtn>
               <div style={{ flex: 1, position: 'relative' }}>
                 <input
-                  type="range" min="0" max={SIM_PROFILE[SIM_PROFILE.length - 1].t} step="0.1"
-                  value={simT} onChange={(e) => setSimT(+e.target.value)}
+                  type="range" min="0" max={simEndT} step="0.1"
+                  value={simTime}
+                  onChange={(e) => {
+                    if (extActive) flightSim.seek(+e.target.value);
+                    else setSimT(+e.target.value);
+                  }}
                   style={{ width: '100%' }}
                 />
               </div>
               <div style={{ fontFamily: FONT.mono, fontSize: 12, color: T.strong, fontWeight: 700, minWidth: 100, textAlign: 'right' }}>
-                {simSample.phase} · T+{simT.toFixed(1)}s
+                {simSample.phase} · T+{simTime.toFixed(1)}s
               </div>
             </div>
             <div style={{ display: 'flex', gap: 14, fontFamily: FONT.mono, fontSize: 10, color: T.muted }}>

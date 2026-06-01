@@ -49,7 +49,7 @@ function KVRow({ label, value }) {
   );
 }
 
-export default function RightRail({ tel, cmd }) {
+export default function RightRail({ tel, cmd, flightSim }) {
   const T = useTheme();
   const tweaks = useTweaksValue();
   const scheme = tweaks.scheme;
@@ -61,6 +61,11 @@ export default function RightRail({ tel, cmd }) {
   const anyArmed = tel.pyro && tel.pyro.slice(0, 3).some((ch) => ch.armed);
   const disabled = !tel || !tel.pyro;
 
+  // A loaded OpenRocket sim that isn't already playing. ARM doubles as
+  // "start the flight" so the operator can launch playback from the Flight
+  // tab without darting back to Setup to press Play.
+  const canStartSim = !!(flightSim && flightSim.profile && !flightSim.playing);
+
   function handleMasterArm() {
     if (!tel.toggleArm || disabled) return;
     if (anyArmed) {
@@ -69,6 +74,8 @@ export default function RightRail({ tel, cmd }) {
         if (ch.armed) tel.toggleArm(i);
       });
     } else {
+      // Start sim playback (if a flight is loaded) so data flows here, then arm.
+      if (canStartSim) flightSim.play();
       // Arm channel 1 only
       tel.toggleArm(0);
     }
