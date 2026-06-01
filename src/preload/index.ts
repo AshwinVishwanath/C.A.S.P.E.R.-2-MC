@@ -135,6 +135,26 @@ const casper_api = {
    */
   compile_logic: (graph: unknown): Promise<unknown> => {
     return ipcRenderer.invoke('casper:compile-logic', graph)
+  },
+
+  // --- OpenRocket sim mode ---
+
+  /**
+   * Open a file dialog and load a flight simulation (CSV now, .ork later).
+   * Resolves to `{ ok, profile, filename }` or `{ ok: false, error|canceled }`.
+   */
+  sim_load: (): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:sim-load')
+  },
+
+  /** Push one playback sample into the telemetry store (fire-and-forget). */
+  sim_push: (sample: unknown): void => {
+    ipcRenderer.send('casper:sim-push', sample)
+  },
+
+  /** Mark simulation active/inactive (drives live indicators + reset). */
+  sim_active: (active: boolean): void => {
+    ipcRenderer.send('casper:sim-active', active)
   }
 }
 

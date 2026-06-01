@@ -119,9 +119,112 @@ function SerialBar({ serial }) {
 }
 
 // ---------------------------------------------------------------------------
+// Flight Sim Source — load an OpenRocket flight and replay it through the
+// dashboard + pyro logic designer (transport controls live here).
+// ---------------------------------------------------------------------------
+function FlightSimBox({ flightSim, serial }) {
+  const T = useTheme();
+  if (!flightSim) return null;
+
+  const {
+    profile, filename, error, loading, playing, speed, setSpeed,
+    simT, duration, sample, load, unload, play, pause, restart, seek,
+  } = flightSim;
+  const linkBusy = serial.fc_connected || serial.gs_connected;
+
+  return (
+    <div
+      style={{
+        marginBottom: SPACE.s4,
+        border: `1px solid ${profile ? T.accentRing : T.border}`,
+        borderRadius: RADIUS.md,
+        background: profile ? T.accentBg : T.bgPanel,
+        padding: '10px 14px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Dot color={profile ? T.accent : T.muted} pulse={playing} />
+        <Cap color={T.muted}>FLIGHT SIM</Cap>
+        <span
+          style={{
+            flex: 1, color: T.strong, fontWeight: 600, fontSize: 11, fontFamily: FONT.mono,
+          }}
+        >
+          {profile
+            ? filename
+            : linkBusy
+              ? 'HARDWARE CONNECTED · sim disabled'
+              : 'No flight loaded — import an OpenRocket CSV'}
+        </span>
+        {profile ? (
+          <>
+            <Pill color={T.muted}>{`APOGEE ${profile.apogee_m.toFixed(0)} m`}</Pill>
+            <Pill color={T.muted}>{`${duration.toFixed(0)} s`}</Pill>
+            <Btn kind="ghost" onClick={unload} icon={<Icon name="undo" size={14} />}>EJECT</Btn>
+          </>
+        ) : (
+          <Btn
+            kind="secondary"
+            disabled={loading || linkBusy}
+            onClick={load}
+            icon={<Icon name="upload" size={14} />}
+          >
+            {loading ? 'LOADING…' : 'LOAD CSV / ORK'}
+          </Btn>
+        )}
+      </div>
+
+      {error && (
+        <div style={{ color: T.danger, fontFamily: FONT.mono, fontSize: 10, marginTop: 8 }}>
+          {error}
+        </div>
+      )}
+
+      {profile && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+          <Btn kind="primary" onClick={playing ? pause : play}>
+            {playing ? '❚❚ PAUSE' : '▶ PLAY'}
+          </Btn>
+          <Btn kind="ghost" onClick={restart}>↺</Btn>
+          <input
+            type="range"
+            min="0"
+            max={duration}
+            step="0.1"
+            value={simT}
+            onChange={(e) => seek(+e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <span
+            style={{
+              fontFamily: FONT.mono, fontSize: 11, color: T.strong, fontWeight: 700,
+              minWidth: 150, textAlign: 'right',
+            }}
+          >
+            {sample ? `${sample.phase} · T+${simT.toFixed(1)}s` : `T+${simT.toFixed(1)}s`}
+          </span>
+          <select
+            value={speed}
+            onChange={(e) => setSpeed(+e.target.value)}
+            style={{
+              fontFamily: FONT.mono, fontSize: 11, background: T.bg, color: T.text,
+              border: `1px solid ${T.border}`, borderRadius: RADIUS.sm, padding: '5px 6px',
+            }}
+          >
+            {[0.25, 0.5, 1, 2, 4].map((s) => (
+              <option key={s} value={s}>{`${s}×`}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SetupTab — header + serial bar + pyro editor
 // ---------------------------------------------------------------------------
-export default function SetupTab({ serial }) {
+export default function SetupTab({ serial, flightSim }) {
   const T = useTheme();
   const scheme = T.scheme || 'fusion';
   const sk = SCHEME_PROPS[scheme] || SCHEME_PROPS.fusion;
@@ -293,6 +396,9 @@ export default function SetupTab({ serial }) {
       {/* Serial picker */}
       <SerialBar serial={serial} />
 
+      {/* Flight sim source (OpenRocket) */}
+      <FlightSimBox flightSim={flightSim} serial={serial} />
+
       {/* Pyro editor */}
       <div style={{ marginBottom: SPACE.s4 }}>
         <PyroEditor
@@ -301,6 +407,7 @@ export default function SetupTab({ serial }) {
           onCompile={handleUpload}
           onExport={handleExport}
           onImport={handleImport}
+          flightSim={flightSim}
           height="calc(100vh - 480px)"
         />
       </div>
