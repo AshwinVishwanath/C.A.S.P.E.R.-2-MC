@@ -20,7 +20,7 @@ import { Cap, Pill } from './design/components.jsx';
 import { Icon } from './design/icons.jsx';
 import { LiquidShader } from './design/instruments.jsx';
 
-import FlightTab from './tabs/FlightTab.jsx';
+import FlightTab from './tabs/FlightTabV2.jsx'; // v2-design Flight tab on live telemetry (was ./tabs/FlightTab.jsx)
 import TestTab from './tabs/TestTab.jsx';
 import TrackTab from './tabs/TrackTab.jsx';
 import SetupTab from './tabs/SetupTab.jsx';
@@ -123,7 +123,7 @@ function Shell({ tweaks, setTweak, telemetry, serial, command, diag, flightSim }
         <main style={{ flex: 1, overflow: 'auto', position: 'relative', background: 'transparent' }}>
           {activeTab === 'setup'    && <SetupTab serial={serial} flightSim={flightSim} />}
           {activeTab === 'test'     && <TestTab tel={telemetry} diag={diag} cmd={command} />}
-          {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} flightSim={flightSim} />}
+          {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} flightSim={flightSim} tweaks={tweaks} />}
           {activeTab === 'tracking' && <TrackTab tel={telemetry} serial={serial} />}
         </main>
       </div>
