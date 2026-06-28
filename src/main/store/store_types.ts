@@ -143,8 +143,12 @@ export interface TelemetrySnapshot {
   // --- Packet stats (1 Hz) ---
   /** Total packets received. */
   pkt_rx_count: number;
-  /** Total packets lost. */
+  /** Total packets lost (estimated from sequence-number gaps). */
   pkt_lost: number;
+  /** Cumulative count of packets that failed CRC. */
+  pkt_crc_err: number;
+  /** Cumulative count of packets recovered via GS error-correction. */
+  pkt_recovered: number;
   /** Link integrity percentage. */
   integrity_pct: number;
   /** GS battery voltage in volts. */
@@ -250,6 +254,8 @@ export const DEFAULT_SNAPSHOT: TelemetrySnapshot = {
   // Packet stats
   pkt_rx_count: 0,
   pkt_lost: 0,
+  pkt_crc_err: 0,
+  pkt_recovered: 0,
   integrity_pct: 0,
   gs_batt_v: 0,
   gs_temp_c: 0,

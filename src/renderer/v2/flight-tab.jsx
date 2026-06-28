@@ -279,12 +279,13 @@ function EventLog({ T, events }) {
 function LinkHealth({ T, scheme, sim }) {
   const sk = SCHEME_PROPS[scheme];
   const rssi = sim.rssi;
-  const snr = 7.4 + Math.sin(sim.met * 0.7) * 1.6;
-  const freqErr = Math.round(Math.sin(sim.met * 0.4) * 180);
+  const snr = sim.snr || 0;
+  const freqErr = sim.freqErr || 0;
   const dataAge = sim.dataAge;
-  const recovered = 14;
+  const recovered = sim.recovered || 0;
   const total = sim.crc.total;
-  const lossPct = ((sim.crc.errors / total) * 100);
+  const lost = sim.crc.lost || 0;
+  const lossPct = (total + lost) > 0 ? (lost / (total + lost)) * 100 : 0;
   const Bar = ({ value, min, max, color, label }) => {
     const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
     return (

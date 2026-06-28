@@ -10,9 +10,8 @@
  * own buildTheme(), so we construct one from the v1 tweaks the rest of the app
  * already uses, keeping mode/accent/scheme consistent across tabs.
  *
- * Fields the FC does not yet expose (board temp, HDOP, per-frame CRC counts)
- * are passed as neutral placeholders — see notes inline. Everything else is
- * live.
+ * Fields the FC does not yet expose (board temp, HDOP) are passed as neutral
+ * placeholders — see notes inline. Everything else is live.
  */
 import React, { useRef } from 'react';
 
@@ -87,17 +86,7 @@ export default function FlightTabV2({ tel, cmd, serial, flightSim, tweaks }) {
   const qbarH = useTelemHistory(t.qbar, 200);
   const accelG = useComputedAccelG(t.vel);
 
-  // Frame counter for the cosmetic CRC readout. The FC reports a rolling
-  // `integrity` percentage rather than raw frame/error counts, so we surface an
-  // approximate error count derived from it against frames actually received.
-  const framesRef = useRef({ last: null, n: 0 });
-  if (t.t !== framesRef.current.last) {
-    framesRef.current.last = t.t;
-    framesRef.current.n += 1;
-  }
-  const crcTotal = framesRef.current.n;
   const integrity = t.integrity != null ? t.integrity : 100;
-  const crcErrors = Math.max(0, Math.round(((100 - integrity) / 100) * crcTotal));
 
   // -------------------------------------------------------------------------
   // Live command wiring — mirrors v1 RightRail / HeroStrip / PyroRail.
@@ -158,7 +147,10 @@ export default function FlightTabV2({ tel, cmd, serial, flightSim, tweaks }) {
 
     rssi: t.rssi || 0,
     dataAge: t.dataAge || 0,
-    crc: { errors: crcErrors, total: crcTotal },
+    snr: t.snr || 0,
+    freqErr: t.freqErr || 0,
+    recovered: t.recovered || 0,
+    crc: { errors: t.crcErrors || 0, total: t.pktRx || 0, lost: t.pktLost || 0 },
 
     batt: t.batt || 0,
     temp: 0, // FC does not expose board temp yet — placeholder

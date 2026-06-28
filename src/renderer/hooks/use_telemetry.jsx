@@ -50,6 +50,12 @@ function makeDefaultState() {
     staleSince: 0,
     qbar: 0,
     integrity: 0,
+    snr: 0,
+    freqErr: 0,
+    crcErrors: 0,
+    pktRx: 0,
+    pktLost: 0,
+    recovered: 0,
     pyro: [
       { hwCh: 1, role: DEFAULT_ROLES[0], cont: false, contV: 0, armed: false, firing: false },
       { hwCh: 2, role: DEFAULT_ROLES[1], cont: false, contV: 0, armed: false, firing: false },
@@ -118,6 +124,12 @@ function mapSnapshot(snap, roles) {
     staleSince: (snap.stale_since_ms || 0) / 1000,
     qbar: snap.qbar_pa != null ? snap.qbar_pa : 0,
     integrity: snap.integrity_pct != null ? snap.integrity_pct : 0,
+    snr:       snap.snr_db != null ? snap.snr_db : 0,
+    freqErr:   snap.freq_err_hz != null ? snap.freq_err_hz : 0,
+    crcErrors: snap.pkt_crc_err != null ? snap.pkt_crc_err : 0,
+    pktRx:     snap.pkt_rx_count != null ? snap.pkt_rx_count : 0,
+    pktLost:   snap.pkt_lost != null ? snap.pkt_lost : 0,
+    recovered: snap.pkt_recovered != null ? snap.pkt_recovered : 0,
     pyro: pyro,
   };
 }

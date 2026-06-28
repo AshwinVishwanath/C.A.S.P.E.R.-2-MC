@@ -23,6 +23,8 @@ export class TelemetryStore {
   private prev_roll: number = 0;
   private prev_pitch: number = 0;
   private prev_yaw: number = 0;
+  private prev_seq: number = 0;
+  private seq_valid: boolean = false;
 
   constructor() {
     // Deep clone DEFAULT_SNAPSHOT to avoid shared state
@@ -94,6 +96,7 @@ export class TelemetryStore {
     s.stale = false;
     s.stale_since_ms = 0;
     this.last_valid_ms = Date.now();
+    this._account_packet(parsed.seq, parsed.crc_ok, parsed.recovery.recovered);
     this._notify();
   }
 
@@ -128,6 +131,7 @@ export class TelemetryStore {
     s.stale = false;
     s.stale_since_ms = 0;
     this.last_valid_ms = Date.now();
+    this._account_packet(parsed.seq, parsed.crc_ok, false);
     this._notify();
   }
 
@@ -222,6 +226,7 @@ export class TelemetryStore {
     snap.stale = false;
     snap.stale_since_ms = 0;
     this.last_valid_ms = Date.now();
+    this._account_packet(snap.seq, true, false);
     this._notify();
   }
 
@@ -247,6 +252,8 @@ export class TelemetryStore {
     this.snapshot.events = events;
     this.euler_initialised = false;
     this.last_valid_ms = 0;
+    this.prev_seq = 0;
+    this.seq_valid = false;
     this._notify();
   }
 
@@ -275,6 +282,8 @@ export class TelemetryStore {
       this.snapshot.fc_conn = fc_conn;
       this.snapshot.gs_conn = gs_conn;
       this.euler_initialised = false;
+      this.prev_seq = 0;
+      this.seq_valid = false;
     }
     this._notify();
   }
@@ -325,10 +334,36 @@ export class TelemetryStore {
     this.snapshot = JSON.parse(JSON.stringify(DEFAULT_SNAPSHOT));
     this.last_valid_ms = 0;
     this.euler_initialised = false;
+    this.prev_seq = 0;
+    this.seq_valid = false;
     this._notify();
   }
 
   // --- Private helpers ---
+
+  /**
+   * Account for one received packet: increment counters, detect sequence-number
+   * gaps (lost packets), and recompute link integrity.
+   *
+   * @param seq       - Rolling 8-bit sequence number from the packet.
+   * @param crc_ok    - True if the packet passed its CRC check.
+   * @param recovered - True if the GS recovered this packet via error-correction.
+   */
+  private _account_packet(seq: number, crc_ok: boolean, recovered: boolean): void {
+    const s = this.snapshot;
+    s.pkt_rx_count += 1;
+    if (!crc_ok) s.pkt_crc_err += 1;
+    if (recovered) s.pkt_recovered += 1;
+    if (this.seq_valid) {
+      const gap = (seq - this.prev_seq - 1) & 0xFF;
+      if (gap > 0 && gap < 64) s.pkt_lost += gap; // ignore large gaps from reconnect/seq reset
+    }
+    this.prev_seq = seq;
+    this.seq_valid = true;
+    const total = s.pkt_rx_count + s.pkt_lost;
+    const good = s.pkt_rx_count - s.pkt_crc_err;
+    s.integrity_pct = total > 0 ? Math.max(0, Math.min(100, (good / total) * 100)) : 0;
+  }
 
   private _notify(): void {
     const snap = this.get_snapshot();

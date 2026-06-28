@@ -540,4 +540,41 @@ describe('TelemetryStore', () => {
     }));
     expect(store.get_snapshot().fsm_state).toBe(FsmState.Drogue);
   });
+
+  // Packet accounting: pkt_rx_count / pkt_lost / pkt_crc_err / integrity_pct
+  it('_account_packet: seq gaps and CRC errors produce correct link stats', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1000);
+
+    // Packet 1 — seq=10, crc_ok=true. First call: seq_valid=false, no gap counted.
+    //   pkt_rx_count=1, pkt_lost=0, pkt_crc_err=0
+    //   integrity = 1/1 * 100 = 100
+    store.update_from_fc_fast(make_fc_fast({ seq: 10, crc_ok: true }));
+    let snap = store.get_snapshot();
+    expect(snap.pkt_rx_count).toBe(1);
+    expect(snap.pkt_lost).toBe(0);
+    expect(snap.pkt_crc_err).toBe(0);
+    expect(snap.integrity_pct).toBeCloseTo(100, 5);
+
+    // Packet 2 — seq=12, crc_ok=true. Gap = (12-10-1)&0xFF = 1 lost.
+    //   pkt_rx_count=2, pkt_lost=1, pkt_crc_err=0
+    //   integrity = good(2) / total(3) * 100 ≈ 66.67
+    store.update_from_fc_fast(make_fc_fast({ seq: 12, crc_ok: true }));
+    snap = store.get_snapshot();
+    expect(snap.pkt_rx_count).toBe(2);
+    expect(snap.pkt_lost).toBe(1);
+    expect(snap.pkt_crc_err).toBe(0);
+    expect(snap.integrity_pct).toBeCloseTo(66.667, 2);
+
+    // Packet 3 — seq=14, crc_ok=false. Gap = (14-12-1)&0xFF = 1 lost. CRC error.
+    //   pkt_rx_count=3, pkt_lost=2, pkt_crc_err=1
+    //   good = pkt_rx_count(3) - pkt_crc_err(1) = 2
+    //   total = pkt_rx_count(3) + pkt_lost(2) = 5
+    //   integrity = 2/5 * 100 = 40
+    store.update_from_fc_fast(make_fc_fast({ seq: 14, crc_ok: false }));
+    snap = store.get_snapshot();
+    expect(snap.pkt_rx_count).toBe(3);
+    expect(snap.pkt_lost).toBe(2);
+    expect(snap.pkt_crc_err).toBe(1);
+    expect(snap.integrity_pct).toBeCloseTo(40, 5);
+  });
 });
