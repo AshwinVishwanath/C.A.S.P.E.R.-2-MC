@@ -17,6 +17,7 @@ import {
   FcMsgGps,
   FcMsgEvent,
   GsMsgTelem,
+  GsMsgStatus,
   AckArm,
   AckFire,
   AckConfig,
@@ -173,10 +174,7 @@ export function parse_packet(
       };
 
     case MSG_ID_GS_STATUS:
-      return {
-        ok: true,
-        message: { type: 'gs_status', data: { msg_id, raw: payload } }
-      };
+      return parse_gs_status(payload);
 
     case MSG_ID_GS_CORRUPT:
       return {
@@ -454,6 +452,69 @@ function parse_gs_telem(payload: Uint8Array): ParseResult {
   };
 
   return { ok: true, message: { type: 'gs_telem', data } };
+}
+
+// ---------------------------------------------------------------------------
+// GS_MSG_STATUS parser (msg_id 0x13, 16 bytes)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse GS_MSG_STATUS packet.
+ *
+ * Layout (16 bytes total):
+ *   [0]     msg_id (0x13)
+ *   [1-2]   rssi_raw (i16, LE) — rssi_dbm = raw * 0.1
+ *   [3]     snr_raw (i8) — snr_db = raw * 0.25
+ *   [4-5]   freq_err_raw (i16, LE) — Hz
+ *   [6-7]   data_age_ms (u16, LE) — ms since last valid FC packet at GS
+ *   [8]     recovery: recovered(bit7) | method(bits6:4) | confidence(bits3:0)
+ *   [9]     gs_batt_raw (u8) — gs_batt_v = 6.0 + raw * 0.012
+ *   [10]    gs_temp_c (i8) — degrees Celsius
+ *   [11]    radio_profile (u8)
+ *   [12-15] CRC-32 (u32, LE) — over bytes [0..11]
+ */
+function parse_gs_status(payload: Uint8Array): ParseResult {
+  // 16 bytes: 12 data + 4 CRC
+  const SIZE_GS_MSG_STATUS = 16;
+  if (payload.length < SIZE_GS_MSG_STATUS) {
+    return {
+      ok: false,
+      error: `GS_MSG_STATUS too short: ${payload.length} < ${SIZE_GS_MSG_STATUS}`,
+      msg_id: MSG_ID_GS_STATUS
+    };
+  }
+
+  const crc_ok = verify_packet_crc(payload);
+
+  const rssi_dbm = read_i16_le(payload, 1) * 0.1;
+  const snr_db = read_i8(payload, 3) * 0.25;
+  const freq_err_hz = read_i16_le(payload, 4);
+  const data_age_ms = read_u16_le(payload, 6);
+
+  // Recovery bitmap: bit7=recovered, bits6:4=method, bits3:0=confidence
+  const recovery_byte = payload[8];
+  const recovered = (recovery_byte & 0x80) !== 0;
+  const method = (recovery_byte >> 4) & 0x07;
+  const confidence = recovery_byte & 0x0F;
+
+  const gs_batt_v = 6.0 + payload[9] * 0.012;
+  const gs_temp_c = read_i8(payload, 10);
+  const radio_profile = payload[11];
+
+  const data: GsMsgStatus = {
+    msg_id: MSG_ID_GS_STATUS,
+    rssi_dbm,
+    snr_db,
+    freq_err_hz,
+    data_age_ms,
+    recovery: { recovered, method, confidence },
+    gs_batt_v,
+    gs_temp_c,
+    radio_profile,
+    crc_ok
+  };
+
+  return { ok: true, message: { type: 'gs_status', data } };
 }
 
 // ---------------------------------------------------------------------------

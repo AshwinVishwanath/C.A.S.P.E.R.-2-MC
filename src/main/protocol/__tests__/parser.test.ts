@@ -13,6 +13,7 @@ import {
   MSG_ID_GPS,
   MSG_ID_EVENT,
   MSG_ID_GS_TELEM,
+  MSG_ID_GS_STATUS,
   MSG_ID_ACK_ARM,
   MSG_ID_NACK,
   MSG_ID_CONFIRM,
@@ -365,12 +366,14 @@ describe('parse edge cases', () => {
     expect(result.message.type).toBe('gs_event');
   });
 
-  it('should return gs_status stub for MSG_ID_GS_STATUS', () => {
-    const pkt = new Uint8Array([0x13, 0x01, 0x02]);
+  it('should reject MSG_ID_GS_STATUS packet that is too short', () => {
+    // 0x13 is now a real decoder with a 16-byte minimum; a 3-byte packet must fail.
+    const pkt = new Uint8Array([MSG_ID_GS_STATUS, 0x01, 0x02]);
     const result = parse_packet(pkt);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.message.type).toBe('gs_status');
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.msg_id).toBe(MSG_ID_GS_STATUS);
+    expect(result.error).toContain('too short');
   });
 
   it('should return gs_corrupt stub for MSG_ID_GS_CORRUPT', () => {
@@ -392,6 +395,156 @@ describe('parse edge cases', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.message.type).toBe('unknown');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GS_MSG_STATUS parser tests
+// ---------------------------------------------------------------------------
+
+describe('parse GS_MSG_STATUS', () => {
+  /**
+   * Build a 16-byte GS_MSG_STATUS packet.
+   *
+   * Layout:
+   *   [0]     0x13
+   *   [1-2]   rssi_raw  i16 LE -> rssi_dbm = raw * 0.1
+   *   [3]     snr_raw   i8     -> snr_db   = raw * 0.25
+   *   [4-5]   freq_err  i16 LE -> Hz
+   *   [6-7]   data_age  u16 LE -> ms
+   *   [8]     recovery bitmap (bit7=recovered, bits6:4=method, bits3:0=confidence)
+   *   [9]     gs_batt   u8     -> 6.0 + raw * 0.012
+   *   [10]    gs_temp   i8     -> degC
+   *   [11]    radio_profile u8
+   *   [12-15] CRC-32 LE over [0..11]
+   */
+  function build_gs_status_packet(opts: {
+    rssi_raw?: number;
+    snr_raw?: number;
+    freq_err_raw?: number;
+    data_age_ms?: number;
+    recovery_byte?: number;
+    gs_batt_raw?: number;
+    gs_temp_raw?: number;
+    radio_profile?: number;
+    bad_crc?: boolean;
+  } = {}): Uint8Array {
+    const pkt = new Uint8Array(16);
+    pkt[0] = MSG_ID_GS_STATUS;
+    write_i16(pkt, 1, opts.rssi_raw ?? 0);
+    // i8 snr — encode negative values as two's complement
+    const snr = opts.snr_raw ?? 0;
+    pkt[3] = snr < 0 ? (snr + 0x100) & 0xFF : snr & 0xFF;
+    write_i16(pkt, 4, opts.freq_err_raw ?? 0);
+    write_u16(pkt, 6, opts.data_age_ms ?? 0);
+    pkt[8] = opts.recovery_byte ?? 0;
+    pkt[9] = opts.gs_batt_raw ?? 0;
+    // i8 gs_temp — encode negative values as two's complement
+    const temp = opts.gs_temp_raw ?? 0;
+    pkt[10] = temp < 0 ? (temp + 0x100) & 0xFF : temp & 0xFF;
+    pkt[11] = opts.radio_profile ?? 0;
+    if (!opts.bad_crc) {
+      append_crc(pkt);
+    }
+    return pkt;
+  }
+
+  it('should parse a valid 16-byte GS_MSG_STATUS packet with correct CRC', () => {
+    // rssi_raw=-500 -> rssi_dbm=-50.0
+    // snr_raw=40    -> snr_db=10.0
+    // freq_err=1000 -> 1000 Hz
+    // data_age=250  -> 250 ms
+    // recovery_byte=0xB3: bit7=1(recovered), bits6:4=0x3(method=3), bits3:0=0x3(confidence=3)
+    // gs_batt_raw=100 -> 6.0 + 100*0.012 = 7.2 V
+    // gs_temp_raw=25  -> 25 degC
+    // radio_profile=2
+    const pkt = build_gs_status_packet({
+      rssi_raw: -500,
+      snr_raw: 40,
+      freq_err_raw: 1000,
+      data_age_ms: 250,
+      recovery_byte: 0xB3,
+      gs_batt_raw: 100,
+      gs_temp_raw: 25,
+      radio_profile: 2
+    });
+
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.message.type).toBe('gs_status');
+    if (result.message.type !== 'gs_status') return;
+
+    const data = result.message.data;
+    expect(data.msg_id).toBe(MSG_ID_GS_STATUS);
+    expect(data.rssi_dbm).toBeCloseTo(-50.0, 1);
+    expect(data.snr_db).toBeCloseTo(10.0, 2);
+    expect(data.freq_err_hz).toBe(1000);
+    expect(data.data_age_ms).toBe(250);
+    expect(data.recovery.recovered).toBe(true);
+    expect(data.recovery.method).toBe(3);
+    expect(data.recovery.confidence).toBe(3);
+    expect(data.gs_batt_v).toBeCloseTo(7.2, 2);
+    expect(data.gs_temp_c).toBe(25);
+    expect(data.radio_profile).toBe(2);
+    expect(data.crc_ok).toBe(true);
+  });
+
+  it('should detect bad CRC and set crc_ok=false while still decoding fields', () => {
+    const pkt = build_gs_status_packet({ rssi_raw: -300, bad_crc: true });
+    write_u32(pkt, 12, 0xDEADBEEF); // wrong CRC
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'gs_status') return;
+    expect(result.message.data.crc_ok).toBe(false);
+    // Fields are still decoded even when CRC fails
+    expect(result.message.data.rssi_dbm).toBeCloseTo(-30.0, 1);
+  });
+
+  it('should reject GS_MSG_STATUS shorter than 16 bytes', () => {
+    const short_pkt = new Uint8Array([MSG_ID_GS_STATUS, 0x00, 0x00]);
+    const result = parse_packet(short_pkt);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.msg_id).toBe(MSG_ID_GS_STATUS);
+    expect(result.error).toContain('too short');
+  });
+
+  it('should decode negative temperature correctly', () => {
+    const pkt = build_gs_status_packet({ gs_temp_raw: -10 });
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'gs_status') return;
+    expect(result.message.data.gs_temp_c).toBe(-10);
+  });
+
+  it('should decode recovery bitmap: no recovery (0x00)', () => {
+    const pkt = build_gs_status_packet({ recovery_byte: 0x00 });
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'gs_status') return;
+    expect(result.message.data.recovery.recovered).toBe(false);
+    expect(result.message.data.recovery.method).toBe(0);
+    expect(result.message.data.recovery.confidence).toBe(0);
+  });
+
+  it('should decode minimum rssi and zero data_age', () => {
+    // rssi_raw=-1000 -> rssi_dbm=-100.0, data_age=0
+    const pkt = build_gs_status_packet({ rssi_raw: -1000, data_age_ms: 0 });
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'gs_status') return;
+    expect(result.message.data.rssi_dbm).toBeCloseTo(-100.0, 1);
+    expect(result.message.data.data_age_ms).toBe(0);
+  });
+
+  it('should decode gs_batt minimum value (raw=0 -> 6.0 V)', () => {
+    const pkt = build_gs_status_packet({ gs_batt_raw: 0 });
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'gs_status') return;
+    expect(result.message.data.gs_batt_v).toBeCloseTo(6.0, 3);
   });
 });
 

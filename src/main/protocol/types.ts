@@ -216,10 +216,27 @@ export interface GsMsgEvent {
   raw: Uint8Array;
 }
 
-/** GS_MSG_STATUS — stub for future GS status message (msg_id 0x13). */
+/** GS_MSG_STATUS — ground station link status message (msg_id 0x13). */
 export interface GsMsgStatus {
   msg_id: number;
-  raw: Uint8Array;
+  /** Received signal strength in dBm (rssi_raw * 0.1). */
+  rssi_dbm: number;
+  /** Signal-to-noise ratio in dB (snr_raw * 0.25). */
+  snr_db: number;
+  /** Frequency error in Hz. */
+  freq_err_hz: number;
+  /** Milliseconds since last valid FC packet received at GS. */
+  data_age_ms: number;
+  /** Recovery information decoded from the recovery bitmap byte. */
+  recovery: { recovered: boolean; method: number; confidence: number };
+  /** Ground station battery voltage in volts (6.0 + raw * 0.012). */
+  gs_batt_v: number;
+  /** Ground station temperature in degrees Celsius. */
+  gs_temp_c: number;
+  /** Active radio profile index. */
+  radio_profile: number;
+  /** True if CRC-32 verified OK. */
+  crc_ok: boolean;
 }
 
 /** GS_MSG_CORRUPT — stub for corrupted GS message (msg_id 0x14). */

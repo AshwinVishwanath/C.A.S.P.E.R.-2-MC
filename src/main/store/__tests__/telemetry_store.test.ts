@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TelemetryStore } from '../telemetry_store';
 import { DEFAULT_SNAPSHOT } from '../store_types';
-import { FcMsgFast, FcMsgGps, FcMsgEvent, GsMsgTelem, FcTlmStatus, FsmState, EventType } from '../../protocol/types';
+import { FcMsgFast, FcMsgGps, FcMsgEvent, GsMsgTelem, GsMsgStatus, FcTlmStatus, FsmState, EventType } from '../../protocol/types';
 import { RING_BUFFER_DEPTH, STALE_THRESHOLD_MS } from '../../protocol/constants';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +90,22 @@ function make_fc_event(overrides?: Partial<FcMsgEvent>): FcMsgEvent {
     event_type: EventType.State,
     event_data: FsmState.Boost,
     flight_time_s: 1.5,
+    crc_ok: true,
+    ...overrides
+  };
+}
+
+function make_gs_status(overrides?: Partial<GsMsgStatus>): GsMsgStatus {
+  return {
+    msg_id: 0x13,
+    rssi_dbm: -75.0,
+    snr_db: 9.5,
+    freq_err_hz: 120,
+    data_age_ms: 80,
+    recovery: { recovered: false, method: 0, confidence: 0 },
+    gs_batt_v: 7.2,
+    gs_temp_c: 22,
+    radio_profile: 1,
     crc_ok: true,
     ...overrides
   };
@@ -542,6 +558,96 @@ describe('TelemetryStore', () => {
   });
 
   // Packet accounting: pkt_rx_count / pkt_lost / pkt_crc_err / integrity_pct
+  // update_from_gs_status: link fields, recovery counters, no stale/last_valid_ms touch
+  it('update_from_gs_status() sets link fields and increments pkt_recovered when recovered', () => {
+    // First call: recovered=false — pkt_recovered should stay 0
+    store.update_from_gs_status(make_gs_status({
+      rssi_dbm: -80.5,
+      snr_db: 7.25,
+      freq_err_hz: 200,
+      data_age_ms: 150,
+      gs_batt_v: 6.96,
+      gs_temp_c: 30,
+      radio_profile: 2,
+      recovery: { recovered: false, method: 0, confidence: 0 }
+    }));
+
+    let snap = store.get_snapshot();
+    expect(snap.rssi_dbm).toBe(-80.5);
+    expect(snap.snr_db).toBe(7.25);
+    expect(snap.freq_err_hz).toBe(200);
+    expect(snap.data_age_ms).toBe(150);
+    expect(snap.gs_batt_v).toBeCloseTo(6.96, 5);
+    expect(snap.gs_temp_c).toBe(30);
+    expect(snap.radio_profile).toBe(2);
+    expect(snap.recovery_flag).toBe(false);
+    expect(snap.recovery_method).toBe(0);
+    expect(snap.recovery_confidence).toBe(0);
+    expect(snap.pkt_recovered).toBe(0);
+
+    // Second call: recovered=true — pkt_recovered must increment
+    store.update_from_gs_status(make_gs_status({
+      rssi_dbm: -65.0,
+      snr_db: 11.0,
+      freq_err_hz: 50,
+      data_age_ms: 20,
+      gs_batt_v: 7.08,
+      gs_temp_c: 25,
+      radio_profile: 1,
+      recovery: { recovered: true, method: 2, confidence: 13 }
+    }));
+
+    snap = store.get_snapshot();
+    expect(snap.rssi_dbm).toBe(-65.0);
+    expect(snap.snr_db).toBe(11.0);
+    expect(snap.freq_err_hz).toBe(50);
+    expect(snap.data_age_ms).toBe(20);
+    expect(snap.gs_batt_v).toBeCloseTo(7.08, 5);
+    expect(snap.gs_temp_c).toBe(25);
+    expect(snap.radio_profile).toBe(1);
+    expect(snap.recovery_flag).toBe(true);
+    expect(snap.recovery_method).toBe(2);
+    expect(snap.recovery_confidence).toBe(13);
+    expect(snap.pkt_recovered).toBe(1);
+
+    // Third call: recovered=true again — counter goes to 2
+    store.update_from_gs_status(make_gs_status({ recovery: { recovered: true, method: 1, confidence: 8 } }));
+    expect(store.get_snapshot().pkt_recovered).toBe(2);
+
+    // update_from_gs_status must NOT affect stale or the telemetry validity path:
+    // stale should still be false (no data ever received on the FC path)
+    expect(store.get_snapshot().stale).toBe(false);
+  });
+
+  // update_from_fc_fast: mach and qbar_pa are derived and non-zero for nonzero velocity
+  it('update_from_fc_fast() derives mach>0 and qbar_pa>0 for nonzero velocity', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1000);
+
+    // Standard flight condition: 300 m AGL, 200 m/s
+    store.update_from_fc_fast(make_fc_fast({ alt_m: 300.0, vel_mps: 200.0 }));
+    let snap = store.get_snapshot();
+    expect(snap.mach).toBeGreaterThan(0);
+    expect(snap.qbar_pa).toBeGreaterThan(0);
+
+    // Sanity-check magnitudes against hand-calculated ISA values:
+    //   alt=300 → rho ≈ 1.225*exp(-300/8500) ≈ 1.182 kg/m³
+    //   qbar = 0.5 * 1.182 * 200² = 23640 Pa  (roughly)
+    //   T = 288.15 - 0.0065*300 = 286.2 K → a ≈ 339.0 m/s → mach ≈ 0.59
+    expect(snap.qbar_pa).toBeGreaterThan(20000);
+    expect(snap.qbar_pa).toBeLessThan(30000);
+    expect(snap.mach).toBeGreaterThan(0.5);
+    expect(snap.mach).toBeLessThan(0.8);
+
+    // The derived qbar_pa must also be in the ring buffer
+    expect(snap.buf_qbar[snap.buf_qbar.length - 1]).toBeCloseTo(snap.qbar_pa, 5);
+
+    // Zero velocity → mach=0 and qbar_pa=0
+    store.update_from_fc_fast(make_fc_fast({ alt_m: 0, vel_mps: 0 }));
+    snap = store.get_snapshot();
+    expect(snap.mach).toBe(0);
+    expect(snap.qbar_pa).toBe(0);
+  });
+
   it('_account_packet: seq gaps and CRC errors produce correct link stats', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1000);
 

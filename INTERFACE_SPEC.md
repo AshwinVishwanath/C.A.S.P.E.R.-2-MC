@@ -322,7 +322,43 @@ Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived val
 - Bits 6:4: `method` — correction method code
 - Bits 3:0: `confidence` — correction confidence (0–15)
 
-### 6.2–6.5 GS_MSG_GPS (0x11), GS_MSG_EVENT (0x12), GS_MSG_STATUS (0x13), GS_MSG_CORRUPT (0x14)
+### 6.2 GS_MSG_GPS (0x11)
+
+**Status:** Stub (future implementation). Parser stores raw bytes for forward compatibility.
+
+### 6.3 GS_MSG_EVENT (0x12)
+
+**Status:** Stub (future implementation). Parser stores raw bytes for forward compatibility.
+
+### 6.4 GS_MSG_STATUS (0x13) — Ground Station Link Status
+
+**Size:** 16 bytes
+**CRC coverage:** bytes [0–11], CRC at [12–15] (u32 LE)
+**Rate:** ~1 Hz (link heartbeat; not a telemetry validity signal)
+
+| Offset | Field | Type | Scale | Unit | Description |
+|---|---|---|---|---|---|
+| 0 | msg_id | u8 | — | — | `0x13` |
+| 1–2 | rssi | i16 LE | × 0.1 | dBm | Received signal strength |
+| 3 | snr | i8 | × 0.25 | dB | Signal-to-noise ratio |
+| 4–5 | freq_err | i16 LE | × 1 | Hz | Frequency error |
+| 6–7 | data_age | u16 LE | × 1 | ms | Time since last valid FC packet |
+| 8 | recovery | u8 | — | bitmap | See below |
+| 9 | gs_batt | u8 | 6.0 + raw × 0.012 | V | Ground station battery voltage |
+| 10 | gs_temp | i8 | × 1 | °C | Ground station temperature |
+| 11 | radio_profile | u8 | — | — | Active LoRa radio profile index |
+| 12–15 | crc32 | u32 LE | — | — | CRC-32 over [0–11] |
+
+**Recovery byte (offset 8):**
+- Bit 7: `recovered` — last FC packet was error-corrected
+- Bits 6:4: `method` — correction method code (0–7)
+- Bits 3:0: `confidence` — correction confidence (0–15)
+
+**MC pipeline:** Decoded fields are applied to the telemetry store via `update_from_gs_status()`. A CRC mismatch is logged but the update is still applied. `last_valid_ms` and stale state are not updated by this message (0x13 is a link heartbeat, not a FC telemetry validity signal).
+
+**In raw-FC relay mode (Option 1), the MC derives mach/qbar from alt/vel and euler from the quaternion; these are not carried on the wire.**
+
+### 6.5 GS_MSG_CORRUPT (0x14)
 
 **Status:** Stub (future implementation). Parser stores raw bytes for forward compatibility.
 

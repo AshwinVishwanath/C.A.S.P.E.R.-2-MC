@@ -9,7 +9,7 @@
  */
 
 import { TelemetrySnapshot, PyroState, EventLogEntry, DEFAULT_SNAPSHOT } from './store_types';
-import { FcMsgFast, FcMsgGps, FcMsgEvent, GsMsgTelem, FcTlmStatus, EventType, FsmState, FSM_STATE_NAMES } from '../protocol/types';
+import { FcMsgFast, FcMsgGps, FcMsgEvent, GsMsgTelem, GsMsgStatus, FcTlmStatus, EventType, FsmState, FSM_STATE_NAMES } from '../protocol/types';
 import { RING_BUFFER_DEPTH, STALE_THRESHOLD_MS, EULER_EMA_ALPHA } from '../protocol/constants';
 import { quat_to_euler_deg } from '../protocol/derived';
 
@@ -123,6 +123,8 @@ export class TelemetryStore {
     s.roll_deg = froll;
     s.pitch_deg = fpitch;
     s.yaw_deg = fyaw;
+    // Derive mach and dynamic pressure from alt/vel (FC direct mode does not carry these)
+    this._derive_mach_qbar(s.alt_m, s.vel_mps);
     // Ring buffers
     this._push_ring(s.buf_alt, s.alt_m);
     this._push_ring(s.buf_vel, s.vel_mps);
@@ -149,6 +151,31 @@ export class TelemetryStore {
     s.gps_sats = parsed.sat_count;
     s.gps_pdop = parsed.pdop;
     s.gps_range_saturated = parsed.range_saturated;
+    this._notify();
+  }
+
+  /**
+   * Ingest a GS_MSG_STATUS (0x13) link-metrics packet from the ground station.
+   *
+   * Updates RSSI, SNR, frequency error, GS battery/temperature, radio profile,
+   * and recovery counters. This packet arrives at ~1 Hz as a separate link-status
+   * message and does NOT affect telemetry validity (last_valid_ms / stale).
+   *
+   * @param parsed - Decoded GS_MSG_STATUS message.
+   */
+  update_from_gs_status(parsed: GsMsgStatus): void {
+    const s = this.snapshot;
+    s.rssi_dbm = parsed.rssi_dbm;
+    s.snr_db = parsed.snr_db;
+    s.freq_err_hz = parsed.freq_err_hz;
+    s.data_age_ms = parsed.data_age_ms;
+    s.gs_batt_v = parsed.gs_batt_v;
+    s.gs_temp_c = parsed.gs_temp_c;
+    s.radio_profile = parsed.radio_profile;
+    s.recovery_flag = parsed.recovery.recovered;
+    s.recovery_method = parsed.recovery.method;
+    s.recovery_confidence = parsed.recovery.confidence;
+    if (parsed.recovery.recovered) s.pkt_recovered += 1;
     this._notify();
   }
 
@@ -377,6 +404,27 @@ export class TelemetryStore {
     if (buf.length > RING_BUFFER_DEPTH) {
       buf.shift();
     }
+  }
+
+  /**
+   * Derive Mach number and dynamic pressure from altitude and velocity using
+   * a simple ISA troposphere + exponential density model. Consistent with the
+   * atmosphere model used in {@link update_from_sim}.
+   *
+   * Called from {@link update_from_fc_fast} (Option 1 / raw-FC relay mode)
+   * where mach and qbar_pa are not carried on the wire.
+   *
+   * @param alt_m   - Altitude in metres AGL (clamped to 0 if negative).
+   * @param vel_mps - Velocity in m/s (signed; magnitude used for Mach).
+   */
+  private _derive_mach_qbar(alt_m: number, vel_mps: number): void {
+    const s = this.snapshot;
+    const alt = Math.max(0, alt_m);
+    const rho = 1.225 * Math.exp(-alt / 8500);
+    s.qbar_pa = 0.5 * rho * vel_mps * vel_mps;
+    const T = 288.15 - 0.0065 * alt;                  // ISA troposphere lapse rate
+    const a = Math.sqrt(1.4 * 287.05 * Math.max(1, T)); // speed of sound
+    s.mach = Math.abs(vel_mps) / a;
   }
 
   /**

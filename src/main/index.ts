@@ -92,6 +92,12 @@ function wire_gs_pipeline(): void {
       case 'fc_event':
         store.update_from_event(msg.data)
         break
+      case 'gs_status':
+        if (!msg.data.crc_ok) {
+          console.warn('[GS] CRC mismatch on GS_MSG_STATUS — applying anyway')
+        }
+        store.update_from_gs_status(msg.data)
+        break
       case 'ack_arm':
       case 'ack_fire':
       case 'nack':
