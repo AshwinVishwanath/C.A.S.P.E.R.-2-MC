@@ -44,6 +44,7 @@ import {
   SIZE_FC_MSG_GPS,
   SIZE_FC_MSG_EVENT,
   SIZE_GS_MSG_TELEM,
+  SIZE_GS_MSG_STATUS,
   SIZE_ACK_ARM,
   SIZE_ACK_FIRE,
   SIZE_ACK_CONFIG,
@@ -95,6 +96,11 @@ function read_i32_le(data: Uint8Array, offset: number): number {
     (data[offset + 2] << 16) |
     (data[offset + 3] << 24)
   );
+}
+
+/** Read unsigned 24-bit little-endian at offset. */
+function read_u24_le(data: Uint8Array, offset: number): number {
+  return (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16)) >>> 0;
 }
 
 /** Read signed 8-bit value. */
@@ -210,22 +216,22 @@ export function parse_packet(
 }
 
 // ---------------------------------------------------------------------------
-// FC_MSG_FAST parser (msg_id 0x01, 20 bytes)
+// FC_MSG_FAST parser (msg_id 0x01, 21 bytes)
 // ---------------------------------------------------------------------------
 
 /**
  * Parse FC_MSG_FAST packet.
  *
- * Layout (20 bytes total):
- *   [0]    msg_id (0x01)
- *   [1-2]  FC_TLM_STATUS (u16, little-endian)
- *   [3-4]  FC_TLM_ALT (u16, LE) — altitude = raw * 1.0 (metres)
- *   [5-6]  FC_TLM_VEL (i16, LE) — velocity = raw * 0.1 (m/s)
- *   [7-11] FC_ATT_QPACKED (5 bytes) — smallest-three quaternion
- *   [12-13] FC_FSM_TIME (u16, LE) — flight_time = raw * 0.1
- *   [14]   FC_PWR_BATT (u8) — batt_v = 6.0 + raw * 0.012
- *   [15]   SEQ (u8) — rolling sequence number
- *   [16-19] CRC-32 (u32, LE)
+ * Layout (21 bytes total):
+ *   [0]     msg_id (0x01)
+ *   [1-2]   FC_TLM_STATUS (u16, little-endian)
+ *   [3-5]   FC_TLM_ALT (u24, LE) — altitude = raw * 0.01 (metres; firmware encodes in cm)
+ *   [6-7]   FC_TLM_VEL (i16, LE) — velocity = raw * 0.1 (m/s)
+ *   [8-12]  FC_ATT_QPACKED (5 bytes) — smallest-three quaternion
+ *   [13-14] FC_FSM_TIME (u16, LE) — flight_time = raw * 0.1
+ *   [15]    FC_PWR_BATT (u8) — batt_v = 6.0 + raw * 0.012
+ *   [16]    SEQ (u8) — rolling sequence number
+ *   [17-20] CRC-32 (u32, LE) — over bytes [0..16]
  */
 function parse_fc_fast(payload: Uint8Array, compute_derived_vals: boolean): ParseResult {
   if (payload.length < SIZE_FC_MSG_FAST) {
@@ -238,12 +244,12 @@ function parse_fc_fast(payload: Uint8Array, compute_derived_vals: boolean): Pars
 
   const crc_ok = verify_packet_crc(payload);
   const status = decode_status(payload.subarray(1, 3));
-  const alt_raw = read_u16_le(payload, 3);
-  const vel_raw = read_i16_le(payload, 5);
-  const quat_bytes = payload.subarray(7, 12);
-  const time_raw = read_u16_le(payload, 12);
-  const batt_raw = payload[14];
-  const seq = payload[15];
+  const alt_raw = read_u24_le(payload, 3);
+  const vel_raw = read_i16_le(payload, 6);
+  const quat_bytes = payload.subarray(8, 13);
+  const time_raw = read_u16_le(payload, 13);
+  const batt_raw = payload[15];
+  const seq = payload[16];
 
   const alt_m = alt_raw * ALT_SCALE;
   const vel_mps = vel_raw * VEL_SCALE;
@@ -268,20 +274,20 @@ function parse_fc_fast(payload: Uint8Array, compute_derived_vals: boolean): Pars
 }
 
 // ---------------------------------------------------------------------------
-// FC_MSG_GPS parser (msg_id 0x02, 17 bytes)
+// FC_MSG_GPS parser (msg_id 0x02, 18 bytes)
 // ---------------------------------------------------------------------------
 
 /**
  * Parse FC_MSG_GPS packet.
  *
- * Layout (17 bytes total):
- *   [0]    msg_id (0x02)
- *   [1-4]  dlat (i32, LE) — delta latitude in mm
- *   [5-8]  dlon (i32, LE) — delta longitude in mm
- *   [9-10] alt_msl (u16, LE) — altitude MSL = raw * 10.0
- *   [11]   fix_type (u8)
- *   [12]   sat_count (u8)
- *   [13-16] CRC-32 (u32, LE)
+ * Layout (18 bytes total):
+ *   [0]     msg_id (0x02)
+ *   [1-4]   dlat (i32, LE) — delta latitude in mm
+ *   [5-8]   dlon (i32, LE) — delta longitude in mm
+ *   [9-11]  alt_msl (u24, LE) — altitude MSL = raw * 0.01 (metres; firmware encodes in cm)
+ *   [12]    fix_type (u8)
+ *   [13]    sat_count (u8)
+ *   [14-17] CRC-32 (u32, LE) — over bytes [0..13]
  *
  * Note: pdop and range_saturated are derived from the fix/sat fields.
  */
@@ -298,9 +304,9 @@ function parse_fc_gps(payload: Uint8Array): ParseResult {
 
   const dlat_mm = read_i32_le(payload, 1);
   const dlon_mm = read_i32_le(payload, 5);
-  const alt_raw = read_u16_le(payload, 9);
-  const fix_type = payload[11];
-  const sat_count = payload[12];
+  const alt_raw = read_u24_le(payload, 9);
+  const fix_type = payload[12];
+  const sat_count = payload[13];
 
   // Check for range saturation: i32 max/min values indicate saturation
   const I32_MAX = 0x7FFFFFFF;
@@ -362,32 +368,35 @@ function parse_fc_event(payload: Uint8Array): ParseResult {
 }
 
 // ---------------------------------------------------------------------------
-// GS_MSG_TELEM parser (msg_id 0x10, 38 bytes)
+// GS_MSG_TELEM parser (msg_id 0x10, 39 bytes)
 // ---------------------------------------------------------------------------
 
 /**
  * Parse GS_MSG_TELEM packet.
  *
- * Layout (38 bytes total):
+ * Layout (39 bytes total):
  *   [0]     msg_id (0x10)
  *   [1-2]   FC_TLM_STATUS (u16, LE)
- *   [3-4]   FC_TLM_ALT (u16, LE)
- *   [5-6]   FC_TLM_VEL (i16, LE)
- *   [7-11]  FC_ATT_QPACKED (5 bytes)
- *   [12-13] FC_FSM_TIME (u16, LE)
- *   [14]    FC_PWR_BATT (u8)
- *   [15]    seq (u8)
- *   [16-17] rssi_raw (i16, LE) — rssi_dbm = raw * 0.1
- *   [18]    snr_raw (i8) — snr_db = raw * 0.25
- *   [19-20] freq_err_raw (i16, LE) — freq_err_hz = raw
- *   [21-22] data_age_ms (u16, LE)
- *   [23]    recovery byte: recovered(bit7) | method(bits6:4) | confidence(bits3:0)
- *   [24-25] mach_raw (u16, LE) — mach = raw * 0.001
- *   [26-27] qbar_raw (u16, LE) — qbar_pa = raw
- *   [28-29] roll_raw (i16, LE) — roll_deg = raw * 0.1
- *   [30-31] pitch_raw (i16, LE) — pitch_deg = raw * 0.1
- *   [32-33] yaw_raw (i16, LE) — yaw_deg = raw * 0.1
- *   [34-37] CRC-32 (u32, LE)
+ *   [3-5]   FC_TLM_ALT (u24, LE) — altitude = raw * 0.01 (metres; firmware encodes in cm)
+ *   [6-7]   FC_TLM_VEL (i16, LE) — velocity = raw * 0.1 (m/s)
+ *   [8-12]  FC_ATT_QPACKED (5 bytes)
+ *   [13-14] FC_FSM_TIME (u16, LE)
+ *   [15]    FC_PWR_BATT (u8)
+ *   [16]    seq (u8)
+ *   [17-18] rssi_raw (i16, LE) — rssi_dbm = raw * 0.1
+ *   [19]    snr_raw (i8) — snr_db = raw * 0.25
+ *   [20-21] freq_err_raw (i16, LE) — freq_err_hz = raw (GS sends 0 currently)
+ *   [22-23] data_age_ms (u16, LE)
+ *   [24]    recovery byte: recovered(bit7) | method(bits6:4) | confidence(bits3:0)
+ *   [25-26] mach_raw (u16, LE) — mach = raw * 0.001 (GS sends 0; MC derives from alt/vel)
+ *   [27-28] qbar_raw (u16, LE) — qbar_pa = raw      (GS sends 0; MC derives from alt/vel)
+ *   [29-30] roll_raw (i16, LE) — roll_deg = raw * 0.1  (GS sends 0; MC derives from quat)
+ *   [31-32] pitch_raw (i16, LE) — pitch_deg = raw * 0.1 (GS sends 0; MC derives from quat)
+ *   [33-34] yaw_raw (i16, LE) — yaw_deg = raw * 0.1    (GS sends 0; MC derives from quat)
+ *   [35-38] CRC-32 (u32, LE) — over bytes [0..34]
+ *
+ * NOTE: GS currently sends euler/mach/qbar/freq_err as 0. The store must derive attitude
+ * from the quaternion and mach/qbar from alt/vel — do NOT trust these packet fields.
  */
 function parse_gs_telem(payload: Uint8Array): ParseResult {
   if (payload.length < SIZE_GS_MSG_TELEM) {
@@ -402,31 +411,32 @@ function parse_gs_telem(payload: Uint8Array): ParseResult {
 
   // FC fields
   const status = decode_status(payload.subarray(1, 3));
-  const alt_m = read_u16_le(payload, 3) * ALT_SCALE;
-  const vel_mps = read_i16_le(payload, 5) * VEL_SCALE;
-  const quat = unpack_quaternion(payload.subarray(7, 12));
-  const flight_time_s = read_u16_le(payload, 12) * TIME_SCALE;
-  const batt_v = BATT_OFFSET + payload[14] * BATT_SCALE;
-  const seq = payload[15];
+  const alt_m = read_u24_le(payload, 3) * ALT_SCALE;
+  const vel_mps = read_i16_le(payload, 6) * VEL_SCALE;
+  const quat = unpack_quaternion(payload.subarray(8, 13));
+  const flight_time_s = read_u16_le(payload, 13) * TIME_SCALE;
+  const batt_v = BATT_OFFSET + payload[15] * BATT_SCALE;
+  const seq = payload[16];
 
-  // GS derived fields
-  const rssi_dbm = read_i16_le(payload, 16) * 0.1;
-  const snr_db = read_i8(payload, 18) * 0.25;
-  const freq_err_hz = read_i16_le(payload, 19);
-  const data_age_ms = read_u16_le(payload, 21);
+  // GS link fields
+  const rssi_dbm = read_i16_le(payload, 17) * 0.1;
+  const snr_db = read_i8(payload, 19) * 0.25;
+  const freq_err_hz = read_i16_le(payload, 20);
+  const data_age_ms = read_u16_le(payload, 22);
   const stale = data_age_ms > STALE_THRESHOLD_MS;
 
   // Recovery byte
-  const recovery_byte = payload[23];
+  const recovery_byte = payload[24];
   const recovered = (recovery_byte & 0x80) !== 0;
   const method = (recovery_byte >> 4) & 0x07;
   const confidence = recovery_byte & 0x0F;
 
-  const mach = read_u16_le(payload, 24) * 0.001;
-  const qbar_pa = read_u16_le(payload, 26);
-  const roll_deg = read_i16_le(payload, 28) * 0.1;
-  const pitch_deg = read_i16_le(payload, 30) * 0.1;
-  const yaw_deg = read_i16_le(payload, 32) * 0.1;
+  // GS-computed fields (sent as 0 currently; store derives these from quat/alt/vel)
+  const mach = read_u16_le(payload, 25) * 0.001;
+  const qbar_pa = read_u16_le(payload, 27);
+  const roll_deg = read_i16_le(payload, 29) * 0.1;
+  const pitch_deg = read_i16_le(payload, 31) * 0.1;
+  const yaw_deg = read_i16_le(payload, 33) * 0.1;
 
   const data: GsMsgTelem = {
     msg_id: MSG_ID_GS_TELEM,
@@ -455,27 +465,25 @@ function parse_gs_telem(payload: Uint8Array): ParseResult {
 }
 
 // ---------------------------------------------------------------------------
-// GS_MSG_STATUS parser (msg_id 0x13, 16 bytes)
+// GS_MSG_STATUS parser (msg_id 0x13, 24 bytes)
 // ---------------------------------------------------------------------------
 
 /**
  * Parse GS_MSG_STATUS packet.
  *
- * Layout (16 bytes total):
+ * Layout (24 bytes total):
  *   [0]     msg_id (0x13)
- *   [1-2]   rssi_raw (i16, LE) — rssi_dbm = raw * 0.1
- *   [3]     snr_raw (i8) — snr_db = raw * 0.25
- *   [4-5]   freq_err_raw (i16, LE) — Hz
- *   [6-7]   data_age_ms (u16, LE) — ms since last valid FC packet at GS
- *   [8]     recovery: recovered(bit7) | method(bits6:4) | confidence(bits3:0)
- *   [9]     gs_batt_raw (u8) — gs_batt_v = 6.0 + raw * 0.012
- *   [10]    gs_temp_c (i8) — degrees Celsius
- *   [11]    radio_profile (u8)
- *   [12-15] CRC-32 (u32, LE) — over bytes [0..11]
+ *   [1]     radio_profile (u8) — 0=Profile A SF7, 1=Profile B SF8
+ *   [2]     last_rssi (i8) — dBm
+ *   [3]     last_snr (i8) — dB
+ *   [4-5]   rx_pkt_count (u16, LE) — total FC packets received
+ *   [6-7]   rx_crc_fail (u16, LE) — packets discarded due to CRC error at GS
+ *   [8-11]  ground_pressure_pa (u32, LE) — ground-level pressure in Pa
+ *   [12-15] ground_lat (i32, LE) — pad latitude in degrees * 1e7
+ *   [16-19] ground_lon (i32, LE) — pad longitude in degrees * 1e7
+ *   [20-23] CRC-32 (u32, LE) — over bytes [0..19]
  */
 function parse_gs_status(payload: Uint8Array): ParseResult {
-  // 16 bytes: 12 data + 4 CRC
-  const SIZE_GS_MSG_STATUS = 16;
   if (payload.length < SIZE_GS_MSG_STATUS) {
     return {
       ok: false,
@@ -486,31 +494,25 @@ function parse_gs_status(payload: Uint8Array): ParseResult {
 
   const crc_ok = verify_packet_crc(payload);
 
-  const rssi_dbm = read_i16_le(payload, 1) * 0.1;
-  const snr_db = read_i8(payload, 3) * 0.25;
-  const freq_err_hz = read_i16_le(payload, 4);
-  const data_age_ms = read_u16_le(payload, 6);
-
-  // Recovery bitmap: bit7=recovered, bits6:4=method, bits3:0=confidence
-  const recovery_byte = payload[8];
-  const recovered = (recovery_byte & 0x80) !== 0;
-  const method = (recovery_byte >> 4) & 0x07;
-  const confidence = recovery_byte & 0x0F;
-
-  const gs_batt_v = 6.0 + payload[9] * 0.012;
-  const gs_temp_c = read_i8(payload, 10);
-  const radio_profile = payload[11];
+  const radio_profile = payload[1];
+  const last_rssi_dbm = read_i8(payload, 2);
+  const last_snr_db = read_i8(payload, 3);
+  const rx_pkt_count = read_u16_le(payload, 4);
+  const rx_crc_fail = read_u16_le(payload, 6);
+  const ground_pressure_pa = read_u32_le(payload, 8);
+  const ground_lat_deg = read_i32_le(payload, 12) * 1e-7;
+  const ground_lon_deg = read_i32_le(payload, 16) * 1e-7;
 
   const data: GsMsgStatus = {
     msg_id: MSG_ID_GS_STATUS,
-    rssi_dbm,
-    snr_db,
-    freq_err_hz,
-    data_age_ms,
-    recovery: { recovered, method, confidence },
-    gs_batt_v,
-    gs_temp_c,
     radio_profile,
+    last_rssi_dbm,
+    last_snr_db,
+    rx_pkt_count,
+    rx_crc_fail,
+    ground_pressure_pa,
+    ground_lat_deg,
+    ground_lon_deg,
     crc_ok
   };
 

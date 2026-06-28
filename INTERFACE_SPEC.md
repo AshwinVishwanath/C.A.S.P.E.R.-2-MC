@@ -4,7 +4,7 @@
 **CRC Standard:** CRC-32/ISO-HDLC
 **Transport:** COBS-framed USB serial (115200 baud)
 **Byte Order:** Little-endian throughout
-**Last Updated:** 2026-02-16
+**Last Updated:** 2026-06-28
 
 This document specifies every interface between Mission Control (MC), the Flight Computer (FC), and the future Ground Station (GS). It serves as the authoritative contract for firmware and software development.
 
@@ -143,13 +143,13 @@ Every decoded COBS payload has `msg_id` at byte `[0]`. The parser dispatches by 
 
 | msg_id | Hex | Direction | Name | Decoded Size |
 |---|---|---|---|---|
-| 1 | `0x01` | FC → MC | FC_MSG_FAST | 20 bytes |
-| 2 | `0x02` | FC → MC | FC_MSG_GPS | 17 bytes |
+| 1 | `0x01` | FC → MC | FC_MSG_FAST | 21 bytes |
+| 2 | `0x02` | FC → MC | FC_MSG_GPS | 18 bytes |
 | 3 | `0x03` | FC → MC | FC_MSG_EVENT | 11 bytes |
 | 16 | `0x10` | GS → MC | GS_MSG_TELEM | 39 bytes |
 | 17 | `0x11` | GS → MC | GS_MSG_GPS | variable |
 | 18 | `0x12` | GS → MC | GS_MSG_EVENT | variable |
-| 19 | `0x13` | GS → MC | GS_MSG_STATUS | variable |
+| 19 | `0x13` | GS → MC | GS_MSG_STATUS | 24 bytes |
 | 20 | `0x14` | GS → MC | GS_MSG_CORRUPT | variable |
 | 128 | `0x80` | MC → FC | CMD_ARM | 12 bytes |
 | 129 | `0x81` | MC → FC | CMD_FIRE | 13 bytes |
@@ -170,35 +170,35 @@ Every decoded COBS payload has `msg_id` at byte `[0]`. The parser dispatches by 
 
 ### 5.1 FC_MSG_FAST (0x01) — High-Rate Telemetry
 
-**Size:** 20 bytes
-**CRC coverage:** bytes [0–15], CRC at [16–19]
+**Size:** 21 bytes
+**CRC coverage:** bytes [0–16], CRC at [17–20]
 
 | Offset | Field | Type | Scale | Unit | Description |
 |---|---|---|---|---|---|
 | 0 | msg_id | u8 | — | — | `0x01` |
 | 1–2 | status | u16 LE | — | bitmap | FC telemetry status (see §5.4) |
-| 3–4 | altitude | u16 LE | × 1.0 | m | Altitude AGL |
-| 5–6 | velocity | i16 LE | × 0.1 | m/s | Velocity (signed, +up) |
-| 7–11 | quaternion | 5 bytes | — | — | Smallest-three packed (see §5.5) |
-| 12–13 | flight_time | u16 LE | × 0.1 | s | Mission elapsed time |
-| 14 | battery | u8 | 6.0 + raw × 0.012 | V | Battery voltage |
-| 15 | seq | u8 | — | — | Rolling sequence counter |
-| 16–19 | crc32 | u32 LE | — | — | CRC-32 over [0–15] |
+| 3–5 | altitude | u24 LE | × 0.01 | m | Altitude AGL (cm resolution) |
+| 6–7 | velocity | i16 LE | × 0.1 | m/s | Velocity (signed, +up) |
+| 8–12 | quaternion | 5 bytes | — | — | Smallest-three packed (see §5.5) |
+| 13–14 | flight_time | u16 LE | × 0.1 | s | Mission elapsed time |
+| 15 | battery | u8 | 6.0 + raw × 0.012 | V | Battery voltage |
+| 16 | seq | u8 | — | — | Rolling sequence counter |
+| 17–20 | crc32 | u32 LE | — | — | CRC-32 over [0–16] |
 
 ### 5.2 FC_MSG_GPS (0x02) — GPS Position
 
-**Size:** 17 bytes
-**CRC coverage:** bytes [0–12], CRC at [13–16]
+**Size:** 18 bytes
+**CRC coverage:** bytes [0–13], CRC at [14–17]
 
 | Offset | Field | Type | Scale | Unit | Description |
 |---|---|---|---|---|---|
 | 0 | msg_id | u8 | — | — | `0x02` |
 | 1–4 | dlat_mm | i32 LE | ÷ 1000 | m | Delta latitude from pad origin |
 | 5–8 | dlon_mm | i32 LE | ÷ 1000 | m | Delta longitude from pad origin |
-| 9–10 | alt_msl | u16 LE | × 10.0 | m | GPS altitude MSL |
-| 11 | fix_type | u8 | — | — | 0=none, 2=2D, 3=3D |
-| 12 | sat_count | u8 | — | — | Satellites in use |
-| 13–16 | crc32 | u32 LE | — | — | CRC-32 over [0–12] |
+| 9–11 | alt_msl | u24 LE | × 0.01 | m | GPS altitude MSL (cm resolution) |
+| 12 | fix_type | u8 | — | — | 0=none, 2=2D, 3=3D |
+| 13 | sat_count | u8 | — | — | Satellites in use |
+| 14–17 | crc32 | u32 LE | — | — | CRC-32 over [0–13] |
 
 **Range saturation:** If `dlat_mm` or `dlon_mm` equals `±0x7FFFFFFF`, the delta has overflowed.
 
@@ -294,30 +294,31 @@ Byte 4:  [C_lo:8]
 
 Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived values.
 
+**Important:** The GS currently transmits zeros for the euler (roll/pitch/yaw), mach, qbar, freq_err, and recovery fields. MC must NOT trust those packet fields — instead MC derives euler from the quaternion via `quat_to_euler_deg()` and derives mach/qbar from alt/vel using the ISA model (see §17). This ensures those store values are always correct regardless of GS firmware revision.
+
 | Offset | Field | Type | Scale | Unit | Description |
 |---|---|---|---|---|---|
 | 0 | msg_id | u8 | — | — | `0x10` |
 | 1–2 | status | u16 LE | — | bitmap | Same as FC_MSG_FAST |
-| 3–4 | altitude | u16 LE | × 1.0 | m | Altitude AGL |
-| 5–6 | velocity | i16 LE | × 0.1 | m/s | Velocity |
-| 7–11 | quaternion | 5 bytes | — | — | Smallest-three |
-| 12–13 | flight_time | u16 LE | × 0.1 | s | Mission elapsed time |
-| 14 | battery | u8 | 6.0 + raw × 0.012 | V | Battery voltage |
-| 15 | seq | u8 | — | — | GS sequence number |
-| 16–17 | rssi | i16 LE | × 0.1 | dBm | Received signal strength |
-| 18 | snr | i8 | × 0.25 | dB | Signal-to-noise ratio |
-| 19–20 | freq_err | i16 LE | × 1 | Hz | Frequency error |
-| 21–22 | data_age | u16 LE | × 1 | ms | Time since last valid FC packet |
-| 23 | recovery | u8 | — | bitmap | See below |
-| 24–25 | mach | u16 LE | × 0.001 | — | Mach number |
-| 26–27 | qbar | u16 LE | × 1 | Pa | Dynamic pressure |
-| 28–29 | roll | i16 LE | × 0.1 | deg | Roll angle |
-| 30–31 | pitch | i16 LE | × 0.1 | deg | Pitch angle |
-| 32–33 | yaw | i16 LE | × 0.1 | deg | Yaw angle |
-| 34 | reserved | u8 | — | — | — |
+| 3–5 | altitude | u24 LE | × 0.01 | m | Altitude AGL (cm resolution) |
+| 6–7 | velocity | i16 LE | × 0.1 | m/s | Velocity |
+| 8–12 | quaternion | 5 bytes | — | — | Smallest-three |
+| 13–14 | flight_time | u16 LE | × 0.1 | s | Mission elapsed time |
+| 15 | battery | u8 | 6.0 + raw × 0.012 | V | Battery voltage |
+| 16 | seq | u8 | — | — | GS sequence number |
+| 17–18 | rssi | i16 LE | × 0.1 | dBm | Received signal strength |
+| 19 | snr | i8 | × 0.25 | dB | Signal-to-noise ratio |
+| 20–21 | freq_err | i16 LE | × 1 | Hz | Frequency error (GS sends 0) |
+| 22–23 | data_age | u16 LE | × 1 | ms | Time since last valid FC packet |
+| 24 | recovery | u8 | — | bitmap | See below (GS sends 0) |
+| 25–26 | mach | u16 LE | × 0.001 | — | Mach number (GS sends 0; MC derives) |
+| 27–28 | qbar | u16 LE | × 1 | Pa | Dynamic pressure (GS sends 0; MC derives) |
+| 29–30 | roll | i16 LE | × 0.1 | deg | Roll angle (GS sends 0; MC derives from quat) |
+| 31–32 | pitch | i16 LE | × 0.1 | deg | Pitch angle (GS sends 0; MC derives from quat) |
+| 33–34 | yaw | i16 LE | × 0.1 | deg | Yaw angle (GS sends 0; MC derives from quat) |
 | 35–38 | crc32 | u32 LE | — | — | CRC-32 over [0–34] |
 
-**Recovery byte (offset 23):**
+**Recovery byte (offset 24):**
 - Bit 7: `recovered` — packet was error-corrected
 - Bits 6:4: `method` — correction method code
 - Bits 3:0: `confidence` — correction confidence (0–15)
@@ -332,31 +333,26 @@ Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived val
 
 ### 6.4 GS_MSG_STATUS (0x13) — Ground Station Link Status
 
-**Size:** 16 bytes
-**CRC coverage:** bytes [0–11], CRC at [12–15] (u32 LE)
+**Size:** 24 bytes
+**CRC coverage:** bytes [0–19], CRC at [20–23] (u32 LE)
 **Rate:** ~1 Hz (link heartbeat; not a telemetry validity signal)
 
 | Offset | Field | Type | Scale | Unit | Description |
 |---|---|---|---|---|---|
 | 0 | msg_id | u8 | — | — | `0x13` |
-| 1–2 | rssi | i16 LE | × 0.1 | dBm | Received signal strength |
-| 3 | snr | i8 | × 0.25 | dB | Signal-to-noise ratio |
-| 4–5 | freq_err | i16 LE | × 1 | Hz | Frequency error |
-| 6–7 | data_age | u16 LE | × 1 | ms | Time since last valid FC packet |
-| 8 | recovery | u8 | — | bitmap | See below |
-| 9 | gs_batt | u8 | 6.0 + raw × 0.012 | V | Ground station battery voltage |
-| 10 | gs_temp | i8 | × 1 | °C | Ground station temperature |
-| 11 | radio_profile | u8 | — | — | Active LoRa radio profile index |
-| 12–15 | crc32 | u32 LE | — | — | CRC-32 over [0–11] |
+| 1 | radio_profile | u8 | — | — | Active LoRa profile (0=A SF7, 1=B SF8) |
+| 2 | last_rssi | i8 | × 1 | dBm | Last received signal strength |
+| 3 | last_snr | i8 | × 1 | dB | Last signal-to-noise ratio |
+| 4–5 | rx_pkt_count | u16 LE | — | count | Total received packet count |
+| 6–7 | rx_crc_fail | u16 LE | — | count | CRC failure count |
+| 8–11 | ground_pressure_pa | u32 LE | — | Pa | Ground-level pressure (pad reference) |
+| 12–15 | ground_lat | i32 LE | × 1e-7 | deg | Pad origin latitude |
+| 16–19 | ground_lon | i32 LE | × 1e-7 | deg | Pad origin longitude |
+| 20–23 | crc32 | u32 LE | — | — | CRC-32 over [0–19] |
 
-**Recovery byte (offset 8):**
-- Bit 7: `recovered` — last FC packet was error-corrected
-- Bits 6:4: `method` — correction method code (0–7)
-- Bits 3:0: `confidence` — correction confidence (0–15)
+**MC pipeline:** Decoded fields are applied to the telemetry store via `update_from_gs_status()`. `last_valid_ms` and stale state are not updated by this message (0x13 is a link heartbeat, not a FC telemetry validity signal).
 
-**MC pipeline:** Decoded fields are applied to the telemetry store via `update_from_gs_status()`. A CRC mismatch is logged but the update is still applied. `last_valid_ms` and stale state are not updated by this message (0x13 is a link heartbeat, not a FC telemetry validity signal).
-
-**In raw-FC relay mode (Option 1), the MC derives mach/qbar from alt/vel and euler from the quaternion; these are not carried on the wire.**
+**Derived values note:** MC derives euler angles from the quaternion and mach/qbar from alt/vel on every GS_MSG_TELEM update (see §17). Ground reference fields in this message (ground_pressure_pa, ground_lat, ground_lon) are stored for future GPS-AGL and pad-origin UI features.
 
 ### 6.5 GS_MSG_CORRUPT (0x14)
 
@@ -630,7 +626,7 @@ The telemetry store maintains a single `TelemetrySnapshot` object updated by inc
 
 | Field | Type | Default | Unit | Source |
 |---|---|---|---|---|
-| `alt_m` | number | 0 | metres | altitude × 1.0 |
+| `alt_m` | number | 0 | metres | altitude × 0.01 (u24 cm) |
 | `vel_mps` | number | 0 | m/s | velocity × 0.1 |
 | `quat` | [n,n,n,n] | [1,0,0,0] | — | smallest-three decode |
 | `roll_deg` | number | 0 | degrees | derived from quat |
@@ -1002,25 +998,25 @@ Aerospace convention (ZYX rotation) from quaternion [w,x,y,z]:
 ### A. Byte Layout Quick Reference
 
 ```
-FC_MSG_FAST (20 bytes):
+FC_MSG_FAST (21 bytes):
   [0]     0x01
   [1-2]   status (u16 LE)
-  [3-4]   altitude (u16 LE, ×1.0 → m)
-  [5-6]   velocity (i16 LE, ×0.1 → m/s)
-  [7-11]  quaternion (5 bytes, smallest-three)
-  [12-13] flight_time (u16 LE, ×0.1 → s)
-  [14]    battery (u8, 6.0 + raw×0.012 → V)
-  [15]    seq (u8, rolling counter)
-  [16-19] CRC-32 (u32 LE)
+  [3-5]   altitude (u24 LE, ×0.01 → m)
+  [6-7]   velocity (i16 LE, ×0.1 → m/s)
+  [8-12]  quaternion (5 bytes, smallest-three)
+  [13-14] flight_time (u16 LE, ×0.1 → s)
+  [15]    battery (u8, 6.0 + raw×0.012 → V)
+  [16]    seq (u8, rolling counter)
+  [17-20] CRC-32 (u32 LE, over [0-16])
 
-FC_MSG_GPS (17 bytes):
+FC_MSG_GPS (18 bytes):
   [0]     0x02
   [1-4]   dlat_mm (i32 LE, ÷1000 → m)
   [5-8]   dlon_mm (i32 LE, ÷1000 → m)
-  [9-10]  alt_msl (u16 LE, ×10.0 → m)
-  [11]    fix_type (u8)
-  [12]    sat_count (u8)
-  [13-16] CRC-32 (u32 LE)
+  [9-11]  alt_msl (u24 LE, ×0.01 → m)
+  [12]    fix_type (u8)
+  [13]    sat_count (u8)
+  [14-17] CRC-32 (u32 LE, over [0-13])
 
 FC_MSG_EVENT (11 bytes):
   [0]     0x03
@@ -1104,40 +1100,52 @@ SIM_FLIGHT (5 bytes):
 GS_MSG_TELEM (39 bytes):
   [0]     0x10
   [1-2]   status (u16 LE)
-  [3-4]   altitude (u16 LE)
-  [5-6]   velocity (i16 LE)
-  [7-11]  quaternion (5 bytes)
-  [12-13] flight_time (u16 LE)
-  [14]    battery (u8)
-  [15]    seq (u8)
-  [16-17] rssi (i16 LE, ×0.1 → dBm)
-  [18]    snr (i8, ×0.25 → dB)
-  [19-20] freq_err (i16 LE → Hz)
-  [21-22] data_age (u16 LE → ms)
-  [23]    recovery byte
-  [24-25] mach (u16 LE, ×0.001)
-  [26-27] qbar (u16 LE → Pa)
-  [28-29] roll (i16 LE, ×0.1 → deg)
-  [30-31] pitch (i16 LE, ×0.1 → deg)
-  [32-33] yaw (i16 LE, ×0.1 → deg)
-  [34]    reserved
-  [35-38] CRC-32 (u32 LE)
+  [3-5]   altitude (u24 LE, ×0.01 → m)
+  [6-7]   velocity (i16 LE, ×0.1 → m/s)
+  [8-12]  quaternion (5 bytes)
+  [13-14] flight_time (u16 LE, ×0.1 → s)
+  [15]    battery (u8, 6.0 + raw×0.012 → V)
+  [16]    seq (u8)
+  [17-18] rssi (i16 LE, ×0.1 → dBm)
+  [19]    snr (i8, ×0.25 → dB)
+  [20-21] freq_err (i16 LE → Hz)
+  [22-23] data_age (u16 LE → ms)
+  [24]    recovery byte
+  [25-26] mach (u16 LE, ×0.001; GS sends 0, MC derives)
+  [27-28] qbar (u16 LE → Pa; GS sends 0, MC derives)
+  [29-30] roll (i16 LE, ×0.1 → deg; GS sends 0, MC derives from quat)
+  [31-32] pitch (i16 LE, ×0.1 → deg; GS sends 0, MC derives from quat)
+  [33-34] yaw (i16 LE, ×0.1 → deg; GS sends 0, MC derives from quat)
+  [35-38] CRC-32 (u32 LE, over [0-34])
+
+GS_MSG_STATUS (24 bytes):
+  [0]     0x13
+  [1]     radio_profile (u8, 0=A SF7, 1=B SF8)
+  [2]     last_rssi (i8, dBm)
+  [3]     last_snr (i8, dB)
+  [4-5]   rx_pkt_count (u16 LE)
+  [6-7]   rx_crc_fail (u16 LE)
+  [8-11]  ground_pressure_pa (u32 LE, Pa)
+  [12-15] ground_lat (i32 LE, deg×1e7)
+  [16-19] ground_lon (i32 LE, deg×1e7)
+  [20-23] CRC-32 (u32 LE, over [0-19])
 ```
 
 ### B. Scaling Factor Summary
 
 | Raw Field | Formula | Result Unit |
 |---|---|---|
-| Altitude (u16) | `raw × 1.0` | metres |
+| Altitude (u24) | `raw × 0.01` | metres |
 | Velocity (i16) | `raw × 0.1` | m/s |
 | Flight time (u16) | `raw × 0.1` | seconds |
 | Battery (u8) | `6.0 + raw × 0.012` | volts |
-| GPS altitude (u16) | `raw × 10.0` | metres MSL |
+| GPS altitude (u24) | `raw × 0.01` | metres MSL |
 | GPS delta lat/lon (i32) | `raw / 1000` | metres |
 | RSSI (i16) | `raw × 0.1` | dBm |
 | SNR (i8) | `raw × 0.25` | dB |
 | Mach (u16) | `raw × 0.001` | — |
 | Roll/Pitch/Yaw (i16) | `raw × 0.1` | degrees |
+| Ground lat/lon (i32) | `raw × 1e-7` | degrees |
 
 ### C. End-to-End Data Flow
 

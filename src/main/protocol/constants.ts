@@ -122,17 +122,20 @@ export const CRC32_XOR_OUT = 0xFFFFFFFF;
 // Packet sizes in bytes (PRD Section 3.3)
 // ---------------------------------------------------------------------------
 
-/** FC_MSG_FAST payload size. Total: 20 bytes (includes seq byte at offset 15). */
-export const SIZE_FC_MSG_FAST = 20;
+/** FC_MSG_FAST payload size. Total: 21 bytes (u24 altitude at offset 3). */
+export const SIZE_FC_MSG_FAST = 21;
 
-/** FC_MSG_GPS payload size. Total: 17 bytes. */
-export const SIZE_FC_MSG_GPS = 17;
+/** FC_MSG_GPS payload size. Total: 18 bytes (u24 alt_msl at offset 9). */
+export const SIZE_FC_MSG_GPS = 18;
 
 /** FC_MSG_EVENT payload size. Total: 11 bytes. */
 export const SIZE_FC_MSG_EVENT = 11;
 
-/** GS_MSG_TELEM payload size. Total: 38 bytes. */
-export const SIZE_GS_MSG_TELEM = 38;
+/** GS_MSG_TELEM payload size. Total: 39 bytes (u24 altitude, no reserved byte). */
+export const SIZE_GS_MSG_TELEM = 39;
+
+/** GS_MSG_STATUS payload size. Total: 24 bytes (v5 layout). */
+export const SIZE_GS_MSG_STATUS = 24;
 
 /** CMD_ARM packet size. Total: 12 bytes. */
 export const SIZE_CMD_ARM = 12;
@@ -169,8 +172,8 @@ export const RING_BUFFER_DEPTH = 150;
 // Scaling factors (PRD Section 4)
 // ---------------------------------------------------------------------------
 
-/** FC_TLM_ALT scaling: raw * ALT_SCALE = metres (1 m per LSB). */
-export const ALT_SCALE = 1.0;
+/** FC_TLM_ALT scaling: raw * ALT_SCALE = metres (0.01 m per LSB — firmware packs altitude in cm as u24). */
+export const ALT_SCALE = 0.01;
 
 /** FC_TLM_VEL scaling: raw * VEL_SCALE = m/s. */
 export const VEL_SCALE = 0.1;
@@ -184,8 +187,8 @@ export const BATT_SCALE = 0.012;
 /** FC_PWR_BATT offset voltage. */
 export const BATT_OFFSET = 6.0;
 
-/** FC_GPS_ALT scaling: raw * GPS_ALT_SCALE = metres. */
-export const GPS_ALT_SCALE = 10.0;
+/** FC_GPS_ALT scaling: raw * GPS_ALT_SCALE = metres (0.01 m per LSB — firmware packs GPS alt in cm as u24). */
+export const GPS_ALT_SCALE = 0.01;
 
 /** EMA smoothing factor for Euler angles (0 = no change, 1 = no smoothing). */
 export const EULER_EMA_ALPHA = 0.3;

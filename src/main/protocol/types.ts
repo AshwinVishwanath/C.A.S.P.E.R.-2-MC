@@ -216,25 +216,25 @@ export interface GsMsgEvent {
   raw: Uint8Array;
 }
 
-/** GS_MSG_STATUS — ground station link status message (msg_id 0x13). */
+/** GS_MSG_STATUS — ground station link status message (msg_id 0x13, v5 24-byte layout). */
 export interface GsMsgStatus {
   msg_id: number;
-  /** Received signal strength in dBm (rssi_raw * 0.1). */
-  rssi_dbm: number;
-  /** Signal-to-noise ratio in dB (snr_raw * 0.25). */
-  snr_db: number;
-  /** Frequency error in Hz. */
-  freq_err_hz: number;
-  /** Milliseconds since last valid FC packet received at GS. */
-  data_age_ms: number;
-  /** Recovery information decoded from the recovery bitmap byte. */
-  recovery: { recovered: boolean; method: number; confidence: number };
-  /** Ground station battery voltage in volts (6.0 + raw * 0.012). */
-  gs_batt_v: number;
-  /** Ground station temperature in degrees Celsius. */
-  gs_temp_c: number;
-  /** Active radio profile index. */
+  /** Active radio profile (0 = Profile A SF7, 1 = Profile B SF8). */
   radio_profile: number;
+  /** Last received RSSI in dBm (signed, raw i8). */
+  last_rssi_dbm: number;
+  /** Last received SNR in dB (signed, raw i8). */
+  last_snr_db: number;
+  /** Total received packet count from FC (wraps at 65535). */
+  rx_pkt_count: number;
+  /** Total packets discarded due to CRC failure at GS. */
+  rx_crc_fail: number;
+  /** Ground-level atmospheric pressure in Pascals (used for AGL reference). */
+  ground_pressure_pa: number;
+  /** Ground latitude in decimal degrees (i32 raw * 1e-7). */
+  ground_lat_deg: number;
+  /** Ground longitude in decimal degrees (i32 raw * 1e-7). */
+  ground_lon_deg: number;
   /** True if CRC-32 verified OK. */
   crc_ok: boolean;
 }

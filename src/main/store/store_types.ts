@@ -158,6 +158,18 @@ export interface TelemetrySnapshot {
   /** Active radio profile index. */
   radio_profile: number;
 
+  // --- Ground station status (from GS_MSG_STATUS 24-byte layout) ---
+  /** GS cumulative RX packet count (rx_pkt_count field). */
+  gs_rx_pkt_count: number;
+  /** GS cumulative RX CRC-fail count (rx_crc_fail field). */
+  gs_rx_crc_fail: number;
+  /** Ground pressure in Pascals measured at the pad. */
+  ground_pressure_pa: number;
+  /** Ground reference latitude in degrees (ground_lat_deg field). */
+  ground_lat_deg: number;
+  /** Ground reference longitude in degrees (ground_lon_deg field). */
+  ground_lon_deg: number;
+
   // --- Flags ---
   /** True if the FC has flagged a system error. */
   sys_error: boolean;
@@ -260,6 +272,13 @@ export const DEFAULT_SNAPSHOT: TelemetrySnapshot = {
   gs_batt_v: 0,
   gs_temp_c: 0,
   radio_profile: 0,
+
+  // Ground station status
+  gs_rx_pkt_count: 0,
+  gs_rx_crc_fail: 0,
+  ground_pressure_pa: 0,
+  ground_lat_deg: 0,
+  ground_lon_deg: 0,
 
   // Flags
   sys_error: false,

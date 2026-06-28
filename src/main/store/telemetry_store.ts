@@ -74,7 +74,7 @@ export class TelemetryStore {
     this._update_pyro_from_status(parsed.status);
     s.fsm_state = parsed.status.fsm_state;
     s.sys_error = parsed.status.error;
-    // GS derived fields
+    // GS link fields (from packet)
     s.rssi_dbm = parsed.rssi_dbm;
     s.snr_db = parsed.snr_db;
     s.freq_err_hz = parsed.freq_err_hz;
@@ -82,13 +82,15 @@ export class TelemetryStore {
     s.recovery_flag = parsed.recovery.recovered;
     s.recovery_method = parsed.recovery.method;
     s.recovery_confidence = parsed.recovery.confidence;
-    s.mach = parsed.mach;
-    s.qbar_pa = parsed.qbar_pa;
-    const [froll, fpitch, fyaw] = this._filter_euler(parsed.roll_deg, parsed.pitch_deg, parsed.yaw_deg);
+    // Derive Euler angles from quaternion — GS currently sends 0 for euler fields
+    const [roll, pitch, yaw] = quat_to_euler_deg(parsed.quat);
+    const [froll, fpitch, fyaw] = this._filter_euler(roll, pitch, yaw);
     s.roll_deg = froll;
     s.pitch_deg = fpitch;
     s.yaw_deg = fyaw;
-    // Ring buffers
+    // Derive Mach and dynamic pressure from alt/vel — GS currently sends 0 for these
+    this._derive_mach_qbar(s.alt_m, s.vel_mps);
+    // Ring buffers (buf_qbar uses the derived qbar, so _derive_mach_qbar must precede this)
     this._push_ring(s.buf_alt, s.alt_m);
     this._push_ring(s.buf_vel, s.vel_mps);
     this._push_ring(s.buf_qbar, s.qbar_pa);
@@ -157,25 +159,25 @@ export class TelemetryStore {
   /**
    * Ingest a GS_MSG_STATUS (0x13) link-metrics packet from the ground station.
    *
-   * Updates RSSI, SNR, frequency error, GS battery/temperature, radio profile,
-   * and recovery counters. This packet arrives at ~1 Hz as a separate link-status
-   * message and does NOT affect telemetry validity (last_valid_ms / stale).
+   * Applies the 24-byte GS_MSG_STATUS layout (v6 protocol):
+   *   radio_profile, last_rssi_dbm, last_snr_db, rx_pkt_count, rx_crc_fail,
+   *   ground_pressure_pa, ground_lat_deg, ground_lon_deg.
    *
-   * @param parsed - Decoded GS_MSG_STATUS message.
+   * This packet arrives at ~1 Hz as a standalone link-status message and does
+   * NOT affect telemetry validity (last_valid_ms / stale are left untouched).
+   *
+   * @param parsed - Decoded GS_MSG_STATUS message (24-byte layout).
    */
   update_from_gs_status(parsed: GsMsgStatus): void {
     const s = this.snapshot;
-    s.rssi_dbm = parsed.rssi_dbm;
-    s.snr_db = parsed.snr_db;
-    s.freq_err_hz = parsed.freq_err_hz;
-    s.data_age_ms = parsed.data_age_ms;
-    s.gs_batt_v = parsed.gs_batt_v;
-    s.gs_temp_c = parsed.gs_temp_c;
-    s.radio_profile = parsed.radio_profile;
-    s.recovery_flag = parsed.recovery.recovered;
-    s.recovery_method = parsed.recovery.method;
-    s.recovery_confidence = parsed.recovery.confidence;
-    if (parsed.recovery.recovered) s.pkt_recovered += 1;
+    s.radio_profile       = parsed.radio_profile;
+    s.rssi_dbm            = parsed.last_rssi_dbm;
+    s.snr_db              = parsed.last_snr_db;
+    s.gs_rx_pkt_count     = parsed.rx_pkt_count;
+    s.gs_rx_crc_fail      = parsed.rx_crc_fail;
+    s.ground_pressure_pa  = parsed.ground_pressure_pa;
+    s.ground_lat_deg      = parsed.ground_lat_deg;
+    s.ground_lon_deg      = parsed.ground_lon_deg;
     this._notify();
   }
 

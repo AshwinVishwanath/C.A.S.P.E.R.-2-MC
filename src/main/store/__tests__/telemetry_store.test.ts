@@ -98,14 +98,14 @@ function make_fc_event(overrides?: Partial<FcMsgEvent>): FcMsgEvent {
 function make_gs_status(overrides?: Partial<GsMsgStatus>): GsMsgStatus {
   return {
     msg_id: 0x13,
-    rssi_dbm: -75.0,
-    snr_db: 9.5,
-    freq_err_hz: 120,
-    data_age_ms: 80,
-    recovery: { recovered: false, method: 0, confidence: 0 },
-    gs_batt_v: 7.2,
-    gs_temp_c: 22,
-    radio_profile: 1,
+    radio_profile: 0,
+    last_rssi_dbm: -75,
+    last_snr_db: 9,
+    rx_pkt_count: 100,
+    rx_crc_fail: 2,
+    ground_pressure_pa: 101325,
+    ground_lat_deg: 37.7749,
+    ground_lon_deg: -122.4194,
     crc_ok: true,
     ...overrides
   };
@@ -233,7 +233,7 @@ describe('TelemetryStore', () => {
     expect(snap.flight_time_s).toBe(10.0);
     expect(snap.batt_v).toBe(7.2);
     expect(snap.seq).toBe(99);
-    // GS-derived fields
+    // GS link fields (from packet)
     expect(snap.rssi_dbm).toBe(-60);
     expect(snap.snr_db).toBe(12.5);
     expect(snap.freq_err_hz).toBe(300);
@@ -241,11 +241,17 @@ describe('TelemetryStore', () => {
     expect(snap.recovery_flag).toBe(true);
     expect(snap.recovery_method).toBe(1);
     expect(snap.recovery_confidence).toBe(95);
-    expect(snap.mach).toBe(0.85);
-    expect(snap.qbar_pa).toBe(45000);
-    expect(snap.roll_deg).toBe(5.0);
-    expect(snap.pitch_deg).toBe(2.0);
-    expect(snap.yaw_deg).toBe(-1.0);
+    // Euler derived from quat [0.707, 0.707, 0, 0] → roll ≈ 90°, pitch ≈ 0°, yaw ≈ 0°
+    // (packet euler fields 5.0/2.0/-1.0 are intentionally ignored)
+    expect(snap.roll_deg).toBeCloseTo(90, 0);
+    expect(Math.abs(snap.pitch_deg)).toBeLessThan(1);
+    expect(Math.abs(snap.yaw_deg)).toBeLessThan(1);
+    // mach/qbar derived from alt=200, vel=80 (packet mach=0.85/qbar=45000 are ignored)
+    // ISA: rho≈1.197 kg/m³ at 200m → qbar≈3829 Pa; a≈339.9 m/s → mach≈0.235
+    expect(snap.mach).toBeGreaterThan(0.2);
+    expect(snap.mach).toBeLessThan(0.3);
+    expect(snap.qbar_pa).toBeGreaterThan(3000);
+    expect(snap.qbar_pa).toBeLessThan(5000);
     // Stale cleared
     expect(snap.stale).toBe(false);
     expect(snap.stale_since_ms).toBe(0);
@@ -558,65 +564,95 @@ describe('TelemetryStore', () => {
   });
 
   // Packet accounting: pkt_rx_count / pkt_lost / pkt_crc_err / integrity_pct
-  // update_from_gs_status: link fields, recovery counters, no stale/last_valid_ms touch
-  it('update_from_gs_status() sets link fields and increments pkt_recovered when recovered', () => {
-    // First call: recovered=false — pkt_recovered should stay 0
+  // update_from_gs_status: 24-byte layout, no stale/last_valid_ms touch
+  it('update_from_gs_status() sets 24-byte GS_MSG_STATUS fields and does not touch telemetry validity', () => {
+    // First call — verify all new fields land in snapshot
     store.update_from_gs_status(make_gs_status({
-      rssi_dbm: -80.5,
-      snr_db: 7.25,
-      freq_err_hz: 200,
-      data_age_ms: 150,
-      gs_batt_v: 6.96,
-      gs_temp_c: 30,
-      radio_profile: 2,
-      recovery: { recovered: false, method: 0, confidence: 0 }
+      radio_profile: 1,
+      last_rssi_dbm: -82,
+      last_snr_db: 7,
+      rx_pkt_count: 350,
+      rx_crc_fail: 4,
+      ground_pressure_pa: 101250,
+      ground_lat_deg: 34.0522,
+      ground_lon_deg: -118.2437,
     }));
 
     let snap = store.get_snapshot();
-    expect(snap.rssi_dbm).toBe(-80.5);
-    expect(snap.snr_db).toBe(7.25);
-    expect(snap.freq_err_hz).toBe(200);
-    expect(snap.data_age_ms).toBe(150);
-    expect(snap.gs_batt_v).toBeCloseTo(6.96, 5);
-    expect(snap.gs_temp_c).toBe(30);
-    expect(snap.radio_profile).toBe(2);
-    expect(snap.recovery_flag).toBe(false);
-    expect(snap.recovery_method).toBe(0);
-    expect(snap.recovery_confidence).toBe(0);
-    expect(snap.pkt_recovered).toBe(0);
+    expect(snap.radio_profile).toBe(1);
+    expect(snap.rssi_dbm).toBe(-82);
+    expect(snap.snr_db).toBe(7);
+    expect(snap.gs_rx_pkt_count).toBe(350);
+    expect(snap.gs_rx_crc_fail).toBe(4);
+    expect(snap.ground_pressure_pa).toBe(101250);
+    expect(snap.ground_lat_deg).toBeCloseTo(34.0522, 4);
+    expect(snap.ground_lon_deg).toBeCloseTo(-118.2437, 4);
 
-    // Second call: recovered=true — pkt_recovered must increment
+    // Must NOT touch stale or telemetry validity path
+    expect(snap.stale).toBe(false);
+
+    // Second call — verify fields are overwritten on subsequent packets
     store.update_from_gs_status(make_gs_status({
-      rssi_dbm: -65.0,
-      snr_db: 11.0,
-      freq_err_hz: 50,
-      data_age_ms: 20,
-      gs_batt_v: 7.08,
-      gs_temp_c: 25,
-      radio_profile: 1,
-      recovery: { recovered: true, method: 2, confidence: 13 }
+      radio_profile: 0,
+      last_rssi_dbm: -65,
+      last_snr_db: 11,
+      rx_pkt_count: 600,
+      rx_crc_fail: 5,
+      ground_pressure_pa: 101000,
+      ground_lat_deg: 37.3382,
+      ground_lon_deg: -121.8863,
     }));
 
     snap = store.get_snapshot();
-    expect(snap.rssi_dbm).toBe(-65.0);
-    expect(snap.snr_db).toBe(11.0);
-    expect(snap.freq_err_hz).toBe(50);
-    expect(snap.data_age_ms).toBe(20);
-    expect(snap.gs_batt_v).toBeCloseTo(7.08, 5);
-    expect(snap.gs_temp_c).toBe(25);
-    expect(snap.radio_profile).toBe(1);
-    expect(snap.recovery_flag).toBe(true);
-    expect(snap.recovery_method).toBe(2);
-    expect(snap.recovery_confidence).toBe(13);
-    expect(snap.pkt_recovered).toBe(1);
+    expect(snap.radio_profile).toBe(0);
+    expect(snap.rssi_dbm).toBe(-65);
+    expect(snap.snr_db).toBe(11);
+    expect(snap.gs_rx_pkt_count).toBe(600);
+    expect(snap.gs_rx_crc_fail).toBe(5);
+    expect(snap.ground_pressure_pa).toBe(101000);
+    expect(snap.ground_lat_deg).toBeCloseTo(37.3382, 4);
+    expect(snap.ground_lon_deg).toBeCloseTo(-121.8863, 4);
 
-    // Third call: recovered=true again — counter goes to 2
-    store.update_from_gs_status(make_gs_status({ recovery: { recovered: true, method: 1, confidence: 8 } }));
-    expect(store.get_snapshot().pkt_recovered).toBe(2);
+    // pkt_recovered must NOT be incremented by update_from_gs_status
+    expect(snap.pkt_recovered).toBe(0);
+    // stale must remain false (no telemetry data received)
+    expect(snap.stale).toBe(false);
+  });
 
-    // update_from_gs_status must NOT affect stale or the telemetry validity path:
-    // stale should still be false (no data ever received on the FC path)
-    expect(store.get_snapshot().stale).toBe(false);
+  // update_from_gs_telem: euler/mach/qbar are derived, not taken from packet fields
+  it('update_from_gs_telem() derives nonzero euler/mach/qbar from quat+alt+vel even when packet fields are 0', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2000);
+
+    // Packet carries zero for euler/mach/qbar but has a real quat, alt and vel.
+    // If MC trusted the packet fields the snapshot would show all zeros.
+    const msg = make_gs_telem({
+      quat: [0.707, 0.707, 0, 0] as [number, number, number, number],
+      alt_m: 200.0,
+      vel_mps: 80.0,
+      mach: 0,
+      qbar_pa: 0,
+      roll_deg: 0,
+      pitch_deg: 0,
+      yaw_deg: 0,
+    });
+
+    store.update_from_gs_telem(msg);
+    const snap = store.get_snapshot();
+
+    // Euler must be derived from quat [0.707, 0.707, 0, 0] → roll ≈ 90°
+    expect(snap.roll_deg).toBeGreaterThan(80);      // ≈ 90°
+    expect(Math.abs(snap.pitch_deg)).toBeLessThan(1); // ≈ 0°
+    expect(Math.abs(snap.yaw_deg)).toBeLessThan(1);   // ≈ 0°
+
+    // Mach/qbar derived from alt=200m, vel=80 m/s
+    // ISA: rho≈1.197 kg/m³ → qbar≈3829 Pa; speed-of-sound≈340 m/s → mach≈0.235
+    expect(snap.mach).toBeGreaterThan(0.2);
+    expect(snap.mach).toBeLessThan(0.3);
+    expect(snap.qbar_pa).toBeGreaterThan(3000);
+    expect(snap.qbar_pa).toBeLessThan(5000);
+
+    // Derived qbar_pa must also be the last value in the ring buffer
+    expect(snap.buf_qbar[snap.buf_qbar.length - 1]).toBeCloseTo(snap.qbar_pa, 5);
   });
 
   // update_from_fc_fast: mach and qbar_pa are derived and non-zero for nonzero velocity
