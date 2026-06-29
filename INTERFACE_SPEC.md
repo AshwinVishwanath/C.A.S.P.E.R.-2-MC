@@ -294,7 +294,7 @@ Byte 4:  [C_lo:8]
 
 Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived values.
 
-**Important:** The GS is the source of truth for attitude — it computes the euler angles (roll/pitch/yaw) using the FC's `casper_quat_to_euler` convention and ships them in this packet. MC **displays these fields directly** and must NOT re-derive attitude from the quaternion on the relay path (this avoids convention drift between the two). The GS still transmits zeros for mach, qbar, freq_err, and recovery; MC derives mach/qbar from alt/vel using the ISA model (see §17). The quaternion (bytes 8–12) is still decoded into the store for the 3D orientation model.
+**Important:** The GS is the source of truth for derived telemetry — it computes the euler angles (roll/pitch/yaw, FC `casper_quat_to_euler` convention) **and mach/qbar** (ISA model from alt/vel) and ships them all in this packet. MC **displays these fields directly** and must NOT re-derive them on the relay path (this avoids convention/model drift between FC and MC). Only `freq_err` and `recovery` remain reserved (0). `data_age` is ≈0 in 0x10 (the GS relays on receipt), so MC uses its own frame-absence timer (`STALE_THRESHOLD_MS`) for staleness, not this field. The quaternion (bytes 8–12) is still decoded into the store for the 3D orientation model.
 
 | Offset | Field | Type | Scale | Unit | Description |
 |---|---|---|---|---|---|
@@ -308,11 +308,11 @@ Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived val
 | 16 | seq | u8 | — | — | GS sequence number |
 | 17–18 | rssi | i16 LE | × 0.1 | dBm | Received signal strength |
 | 19 | snr | i8 | × 0.25 | dB | Signal-to-noise ratio |
-| 20–21 | freq_err | i16 LE | × 1 | Hz | Frequency error (GS sends 0) |
-| 22–23 | data_age | u16 LE | × 1 | ms | Time since last valid FC packet |
-| 24 | recovery | u8 | — | bitmap | See below (GS sends 0) |
-| 25–26 | mach | u16 LE | × 0.001 | — | Mach number (GS sends 0; MC derives) |
-| 27–28 | qbar | u16 LE | × 1 | Pa | Dynamic pressure (GS sends 0; MC derives) |
+| 20–21 | freq_err | i16 LE | × 1 | Hz | Frequency error (reserved, GS sends 0) |
+| 22–23 | data_age | u16 LE | × 1 | ms | ≈0 in 0x10 (GS relays on RX); use MC frame-absence timer for staleness |
+| 24 | recovery | u8 | — | bitmap | See below (reserved, GS sends 0) |
+| 25–26 | mach | u16 LE | × 0.001 | — | Mach number (GS-computed; MC displays directly) |
+| 27–28 | qbar | u16 LE | × 1 | Pa | Dynamic pressure (GS-computed; MC displays directly) |
 | 29–30 | roll | i16 LE | × 0.1 | deg | Roll — body Y / nose axis (GS-computed, FC convention; MC displays directly) |
 | 31–32 | pitch | i16 LE | × 0.1 | deg | Pitch — body X / lateral (GS-computed; MC displays directly) |
 | 33–34 | yaw | i16 LE | × 0.1 | deg | Yaw — body Z / heading (GS-computed; MC displays directly) |
@@ -352,7 +352,7 @@ Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived val
 
 **MC pipeline:** Decoded fields are applied to the telemetry store via `update_from_gs_status()`. `last_valid_ms` and stale state are not updated by this message (0x13 is a link heartbeat, not a FC telemetry validity signal).
 
-**Derived values note:** MC displays the GS-computed euler angles from GS_MSG_TELEM directly and derives only mach/qbar from alt/vel (see §17). (In direct-FC-over-USB mode, FC_MSG_FAST carries no euler, so MC derives attitude from the quaternion using the FC convention — §17.3.) Ground reference fields in this message (ground_pressure_pa, ground_lat, ground_lon) are stored for future GPS-AGL and pad-origin UI features.
+**Derived values note:** MC displays the GS-computed euler angles **and mach/qbar** from GS_MSG_TELEM directly — no MC-side recomputation on the relay path. (In direct-FC-over-USB mode, FC_MSG_FAST carries neither euler nor mach/qbar, so MC derives both there — euler from the quaternion using the FC convention, §17.3; mach/qbar via the ISA model, §17.1–17.2.) Ground reference fields in this message (ground_pressure_pa, ground_lat, ground_lon) are stored for future GPS-AGL and pad-origin UI features.
 
 ### 6.5 GS_MSG_CORRUPT (0x14)
 
@@ -632,8 +632,8 @@ The telemetry store maintains a single `TelemetrySnapshot` object updated by inc
 | `roll_deg` | number | 0 | degrees | GS-computed (relay); quat-derived (direct-FC) |
 | `pitch_deg` | number | 0 | degrees | GS-computed (relay); quat-derived (direct-FC) |
 | `yaw_deg` | number | 0 | degrees | GS-computed (relay); quat-derived (direct-FC) |
-| `mach` | number | 0 | — | derived (ISA model) |
-| `qbar_pa` | number | 0 | Pa | derived (exp density) |
+| `mach` | number | 0 | — | GS-computed (relay); ISA-derived (direct-FC) |
+| `qbar_pa` | number | 0 | Pa | GS-computed (relay); exp-density-derived (direct-FC) |
 | `batt_v` | number | 0 | V | 6.0 + raw × 0.012 |
 | `fsm_state` | number | 0 | enum | status bits 15:12 |
 | `flight_time_s` | number | 0 | s | raw × 0.1 |
@@ -1113,8 +1113,8 @@ GS_MSG_TELEM (39 bytes):
   [20-21] freq_err (i16 LE → Hz)
   [22-23] data_age (u16 LE → ms)
   [24]    recovery byte
-  [25-26] mach (u16 LE, ×0.001; GS sends 0, MC derives)
-  [27-28] qbar (u16 LE → Pa; GS sends 0, MC derives)
+  [25-26] mach (u16 LE, ×0.001; GS-computed, MC displays directly)
+  [27-28] qbar (u16 LE → Pa; GS-computed, MC displays directly)
   [29-30] roll (i16 LE, ×0.1 → deg; GS-computed body Y; MC displays directly)
   [31-32] pitch (i16 LE, ×0.1 → deg; GS-computed body X; MC displays directly)
   [33-34] yaw (i16 LE, ×0.1 → deg; GS-computed body Z; MC displays directly)

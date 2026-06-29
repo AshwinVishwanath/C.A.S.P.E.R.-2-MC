@@ -90,10 +90,11 @@ export class TelemetryStore {
     s.roll_deg = froll;
     s.pitch_deg = fpitch;
     s.yaw_deg = fyaw;
-    // Mach and dynamic pressure are still sent as 0 by the GS, so MC derives them from
-    // alt/vel (deterministic; matches the v6 "MC computes mach/qbar" direction).
-    this._derive_mach_qbar(s.alt_m, s.vel_mps);
-    // Ring buffers (buf_qbar uses the derived qbar, so _derive_mach_qbar must precede this)
+    // Mach and dynamic pressure are now GS-computed too — display them straight from the packet,
+    // do NOT re-derive (GS is the source of truth). FC-direct mode still derives them (FAST has none).
+    s.mach = parsed.mach;
+    s.qbar_pa = parsed.qbar_pa;
+    // Ring buffers
     this._push_ring(s.buf_alt, s.alt_m);
     this._push_ring(s.buf_vel, s.vel_mps);
     this._push_ring(s.buf_qbar, s.qbar_pa);

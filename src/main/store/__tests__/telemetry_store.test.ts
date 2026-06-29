@@ -246,12 +246,9 @@ describe('TelemetryStore', () => {
     expect(snap.roll_deg).toBeCloseTo(5.0, 1);
     expect(snap.pitch_deg).toBeCloseTo(2.0, 1);
     expect(snap.yaw_deg).toBeCloseTo(-1.0, 1);
-    // mach/qbar still derived from alt=200, vel=80 (packet mach=0.85/qbar=45000 are ignored — GS sends 0)
-    // ISA: rho≈1.197 kg/m³ at 200m → qbar≈3829 Pa; a≈339.9 m/s → mach≈0.235
-    expect(snap.mach).toBeGreaterThan(0.2);
-    expect(snap.mach).toBeLessThan(0.3);
-    expect(snap.qbar_pa).toBeGreaterThan(3000);
-    expect(snap.qbar_pa).toBeLessThan(5000);
+    // mach/qbar are now also GS-computed — displayed straight from the packet (0.85 / 45000)
+    expect(snap.mach).toBeCloseTo(0.85, 5);
+    expect(snap.qbar_pa).toBe(45000);
     // Stale cleared
     expect(snap.stale).toBe(false);
     expect(snap.stale_since_ms).toBe(0);
@@ -619,19 +616,20 @@ describe('TelemetryStore', () => {
     expect(snap.stale).toBe(false);
   });
 
-  // update_from_gs_telem: euler is taken from the GS packet (source of truth), NOT re-derived
-  // from the quaternion; mach/qbar are still MC-derived because the GS sends 0 for them.
-  it('update_from_gs_telem() uses packet euler (not quat-derived) and derives mach/qbar', () => {
+  // update_from_gs_telem: euler AND mach/qbar are taken from the GS packet (source of truth),
+  // NOT re-derived MC-side.
+  it('update_from_gs_telem() uses packet euler and mach/qbar (no MC re-derivation)', () => {
     vi.spyOn(Date, 'now').mockReturnValue(2000);
 
-    // Packet euler is distinctive; the quaternion [0.707, 0.707, 0, 0] would derive to pitch≈90°
-    // if MC re-derived it. The snapshot must show the PACKET euler, proving MC does not re-derive.
+    // Packet euler/mach/qbar are distinctive; the quaternion [0.707, 0.707, 0, 0] would derive to
+    // pitch≈90° and alt/vel would derive different mach/qbar if MC re-computed. The snapshot must
+    // show the PACKET values, proving MC displays GS truth and does not re-derive.
     const msg = make_gs_telem({
       quat: [0.707, 0.707, 0, 0] as [number, number, number, number],
       alt_m: 200.0,
       vel_mps: 80.0,
-      mach: 0,
-      qbar_pa: 0,
+      mach: 1.23,
+      qbar_pa: 12345,
       roll_deg: 10.0,
       pitch_deg: -20.0,
       yaw_deg: 45.0,
@@ -645,15 +643,12 @@ describe('TelemetryStore', () => {
     expect(snap.pitch_deg).toBeCloseTo(-20.0, 1);
     expect(snap.yaw_deg).toBeCloseTo(45.0, 1);
 
-    // Mach/qbar still derived from alt=200m, vel=80 m/s (GS sends 0)
-    // ISA: rho≈1.197 kg/m³ → qbar≈3829 Pa; speed-of-sound≈340 m/s → mach≈0.235
-    expect(snap.mach).toBeGreaterThan(0.2);
-    expect(snap.mach).toBeLessThan(0.3);
-    expect(snap.qbar_pa).toBeGreaterThan(3000);
-    expect(snap.qbar_pa).toBeLessThan(5000);
+    // mach/qbar must match the packet (NOT MC-derived from alt/vel)
+    expect(snap.mach).toBeCloseTo(1.23, 5);
+    expect(snap.qbar_pa).toBe(12345);
 
-    // Derived qbar_pa must also be the last value in the ring buffer
-    expect(snap.buf_qbar[snap.buf_qbar.length - 1]).toBeCloseTo(snap.qbar_pa, 5);
+    // Packet qbar must also be the last value in the ring buffer
+    expect(snap.buf_qbar[snap.buf_qbar.length - 1]).toBeCloseTo(12345, 5);
   });
 
   // update_from_fc_fast: mach and qbar_pa are derived and non-zero for nonzero velocity
