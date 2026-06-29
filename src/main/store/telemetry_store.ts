@@ -82,13 +82,16 @@ export class TelemetryStore {
     s.recovery_flag = parsed.recovery.recovered;
     s.recovery_method = parsed.recovery.method;
     s.recovery_confidence = parsed.recovery.confidence;
-    // Derive Euler angles from quaternion — GS currently sends 0 for euler fields
-    const [roll, pitch, yaw] = quat_to_euler_deg(parsed.quat);
-    const [froll, fpitch, fyaw] = this._filter_euler(roll, pitch, yaw);
+    // Attitude: the GS is the source of truth — it computes euler with the FC's
+    // casper_quat_to_euler convention and ships roll/pitch/yaw in the packet. Display
+    // those directly; do NOT re-derive from the quaternion (avoids convention drift).
+    // The quaternion is still kept in s.quat above for the 3D orientation model.
+    const [froll, fpitch, fyaw] = this._filter_euler(parsed.roll_deg, parsed.pitch_deg, parsed.yaw_deg);
     s.roll_deg = froll;
     s.pitch_deg = fpitch;
     s.yaw_deg = fyaw;
-    // Derive Mach and dynamic pressure from alt/vel — GS currently sends 0 for these
+    // Mach and dynamic pressure are still sent as 0 by the GS, so MC derives them from
+    // alt/vel (deterministic; matches the v6 "MC computes mach/qbar" direction).
     this._derive_mach_qbar(s.alt_m, s.vel_mps);
     // Ring buffers (buf_qbar uses the derived qbar, so _derive_mach_qbar must precede this)
     this._push_ring(s.buf_alt, s.alt_m);

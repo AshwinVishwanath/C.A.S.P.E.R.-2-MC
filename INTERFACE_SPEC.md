@@ -294,7 +294,7 @@ Byte 4:  [C_lo:8]
 
 Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived values.
 
-**Important:** The GS currently transmits zeros for the euler (roll/pitch/yaw), mach, qbar, freq_err, and recovery fields. MC must NOT trust those packet fields — instead MC derives euler from the quaternion via `quat_to_euler_deg()` and derives mach/qbar from alt/vel using the ISA model (see §17). This ensures those store values are always correct regardless of GS firmware revision.
+**Important:** The GS is the source of truth for attitude — it computes the euler angles (roll/pitch/yaw) using the FC's `casper_quat_to_euler` convention and ships them in this packet. MC **displays these fields directly** and must NOT re-derive attitude from the quaternion on the relay path (this avoids convention drift between the two). The GS still transmits zeros for mach, qbar, freq_err, and recovery; MC derives mach/qbar from alt/vel using the ISA model (see §17). The quaternion (bytes 8–12) is still decoded into the store for the 3D orientation model.
 
 | Offset | Field | Type | Scale | Unit | Description |
 |---|---|---|---|---|---|
@@ -313,9 +313,9 @@ Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived val
 | 24 | recovery | u8 | — | bitmap | See below (GS sends 0) |
 | 25–26 | mach | u16 LE | × 0.001 | — | Mach number (GS sends 0; MC derives) |
 | 27–28 | qbar | u16 LE | × 1 | Pa | Dynamic pressure (GS sends 0; MC derives) |
-| 29–30 | roll | i16 LE | × 0.1 | deg | Roll angle (GS sends 0; MC derives from quat) |
-| 31–32 | pitch | i16 LE | × 0.1 | deg | Pitch angle (GS sends 0; MC derives from quat) |
-| 33–34 | yaw | i16 LE | × 0.1 | deg | Yaw angle (GS sends 0; MC derives from quat) |
+| 29–30 | roll | i16 LE | × 0.1 | deg | Roll — body Y / nose axis (GS-computed, FC convention; MC displays directly) |
+| 31–32 | pitch | i16 LE | × 0.1 | deg | Pitch — body X / lateral (GS-computed; MC displays directly) |
+| 33–34 | yaw | i16 LE | × 0.1 | deg | Yaw — body Z / heading (GS-computed; MC displays directly) |
 | 35–38 | crc32 | u32 LE | — | — | CRC-32 over [0–34] |
 
 **Recovery byte (offset 24):**
@@ -352,7 +352,7 @@ Contains all FC_MSG_FAST fields plus GS-added radio link quality and derived val
 
 **MC pipeline:** Decoded fields are applied to the telemetry store via `update_from_gs_status()`. `last_valid_ms` and stale state are not updated by this message (0x13 is a link heartbeat, not a FC telemetry validity signal).
 
-**Derived values note:** MC derives euler angles from the quaternion and mach/qbar from alt/vel on every GS_MSG_TELEM update (see §17). Ground reference fields in this message (ground_pressure_pa, ground_lat, ground_lon) are stored for future GPS-AGL and pad-origin UI features.
+**Derived values note:** MC displays the GS-computed euler angles from GS_MSG_TELEM directly and derives only mach/qbar from alt/vel (see §17). (In direct-FC-over-USB mode, FC_MSG_FAST carries no euler, so MC derives attitude from the quaternion using the FC convention — §17.3.) Ground reference fields in this message (ground_pressure_pa, ground_lat, ground_lon) are stored for future GPS-AGL and pad-origin UI features.
 
 ### 6.5 GS_MSG_CORRUPT (0x14)
 
@@ -629,9 +629,9 @@ The telemetry store maintains a single `TelemetrySnapshot` object updated by inc
 | `alt_m` | number | 0 | metres | altitude × 0.01 (u24 cm) |
 | `vel_mps` | number | 0 | m/s | velocity × 0.1 |
 | `quat` | [n,n,n,n] | [1,0,0,0] | — | smallest-three decode |
-| `roll_deg` | number | 0 | degrees | derived from quat |
-| `pitch_deg` | number | 0 | degrees | derived from quat |
-| `yaw_deg` | number | 0 | degrees | derived from quat |
+| `roll_deg` | number | 0 | degrees | GS-computed (relay); quat-derived (direct-FC) |
+| `pitch_deg` | number | 0 | degrees | GS-computed (relay); quat-derived (direct-FC) |
+| `yaw_deg` | number | 0 | degrees | GS-computed (relay); quat-derived (direct-FC) |
 | `mach` | number | 0 | — | derived (ISA model) |
 | `qbar_pa` | number | 0 | Pa | derived (exp density) |
 | `batt_v` | number | 0 | V | 6.0 + raw × 0.012 |
@@ -986,10 +986,12 @@ Exponential density model:
 
 ### 17.3 Euler Angles
 
-Aerospace convention (ZYX rotation) from quaternion [w,x,y,z]:
-- Roll: `atan2(2(wx+yz), 1−2(x²+y²))`
-- Pitch: `asin(clamp(2(wy−zx), −1, 1))`
-- Yaw: `atan2(2(wz+xy), 1−2(y²+z²))`
+FC `casper_quat_to_euler` convention — body frame **Y = nose / thrust axis** — from quaternion [w,x,y,z].
+Used only for the **direct-FC path** (FC_MSG_FAST has no euler fields); GS_MSG_TELEM ships GS-computed euler
+in the same convention, which MC displays directly.
+- Roll  (body Y, nose/antenna spin): `asin(clamp(2(wy−zx), −1, 1))`
+- Pitch (body X, lateral tilt):       `atan2(2(wx+yz), 1−2(x²+y²))`
+- Yaw   (body Z, heading):            `atan2(2(wz+xy), 1−2(y²+z²))`
 
 ---
 
@@ -1113,9 +1115,9 @@ GS_MSG_TELEM (39 bytes):
   [24]    recovery byte
   [25-26] mach (u16 LE, ×0.001; GS sends 0, MC derives)
   [27-28] qbar (u16 LE → Pa; GS sends 0, MC derives)
-  [29-30] roll (i16 LE, ×0.1 → deg; GS sends 0, MC derives from quat)
-  [31-32] pitch (i16 LE, ×0.1 → deg; GS sends 0, MC derives from quat)
-  [33-34] yaw (i16 LE, ×0.1 → deg; GS sends 0, MC derives from quat)
+  [29-30] roll (i16 LE, ×0.1 → deg; GS-computed body Y; MC displays directly)
+  [31-32] pitch (i16 LE, ×0.1 → deg; GS-computed body X; MC displays directly)
+  [33-34] yaw (i16 LE, ×0.1 → deg; GS-computed body Z; MC displays directly)
   [35-38] CRC-32 (u32 LE, over [0-34])
 
 GS_MSG_STATUS (24 bytes):

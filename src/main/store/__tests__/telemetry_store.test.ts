@@ -241,12 +241,12 @@ describe('TelemetryStore', () => {
     expect(snap.recovery_flag).toBe(true);
     expect(snap.recovery_method).toBe(1);
     expect(snap.recovery_confidence).toBe(95);
-    // Euler derived from quat [0.707, 0.707, 0, 0] (rotation about body X) → pitch ≈ 90°, roll ≈ 0°, yaw ≈ 0°
-    // (packet euler fields 5.0/2.0/-1.0 are intentionally ignored)
-    expect(snap.pitch_deg).toBeCloseTo(90, 0);
-    expect(Math.abs(snap.roll_deg)).toBeLessThan(1);
-    expect(Math.abs(snap.yaw_deg)).toBeLessThan(1);
-    // mach/qbar derived from alt=200, vel=80 (packet mach=0.85/qbar=45000 are ignored)
+    // Euler comes straight from the GS packet (the GS computes it with the FC convention);
+    // the quaternion [0.707, 0.707, 0, 0] is NOT used for the displayed numbers.
+    expect(snap.roll_deg).toBeCloseTo(5.0, 1);
+    expect(snap.pitch_deg).toBeCloseTo(2.0, 1);
+    expect(snap.yaw_deg).toBeCloseTo(-1.0, 1);
+    // mach/qbar still derived from alt=200, vel=80 (packet mach=0.85/qbar=45000 are ignored — GS sends 0)
     // ISA: rho≈1.197 kg/m³ at 200m → qbar≈3829 Pa; a≈339.9 m/s → mach≈0.235
     expect(snap.mach).toBeGreaterThan(0.2);
     expect(snap.mach).toBeLessThan(0.3);
@@ -619,32 +619,33 @@ describe('TelemetryStore', () => {
     expect(snap.stale).toBe(false);
   });
 
-  // update_from_gs_telem: euler/mach/qbar are derived, not taken from packet fields
-  it('update_from_gs_telem() derives nonzero euler/mach/qbar from quat+alt+vel even when packet fields are 0', () => {
+  // update_from_gs_telem: euler is taken from the GS packet (source of truth), NOT re-derived
+  // from the quaternion; mach/qbar are still MC-derived because the GS sends 0 for them.
+  it('update_from_gs_telem() uses packet euler (not quat-derived) and derives mach/qbar', () => {
     vi.spyOn(Date, 'now').mockReturnValue(2000);
 
-    // Packet carries zero for euler/mach/qbar but has a real quat, alt and vel.
-    // If MC trusted the packet fields the snapshot would show all zeros.
+    // Packet euler is distinctive; the quaternion [0.707, 0.707, 0, 0] would derive to pitch≈90°
+    // if MC re-derived it. The snapshot must show the PACKET euler, proving MC does not re-derive.
     const msg = make_gs_telem({
       quat: [0.707, 0.707, 0, 0] as [number, number, number, number],
       alt_m: 200.0,
       vel_mps: 80.0,
       mach: 0,
       qbar_pa: 0,
-      roll_deg: 0,
-      pitch_deg: 0,
-      yaw_deg: 0,
+      roll_deg: 10.0,
+      pitch_deg: -20.0,
+      yaw_deg: 45.0,
     });
 
     store.update_from_gs_telem(msg);
     const snap = store.get_snapshot();
 
-    // Euler must be derived from quat [0.707, 0.707, 0, 0] (rotation about body X) → pitch ≈ 90°
-    expect(snap.pitch_deg).toBeGreaterThan(80);      // ≈ 90°
-    expect(Math.abs(snap.roll_deg)).toBeLessThan(1);  // ≈ 0°
-    expect(Math.abs(snap.yaw_deg)).toBeLessThan(1);   // ≈ 0°
+    // Euler must match the packet (NOT the quat-derived pitch≈90)
+    expect(snap.roll_deg).toBeCloseTo(10.0, 1);
+    expect(snap.pitch_deg).toBeCloseTo(-20.0, 1);
+    expect(snap.yaw_deg).toBeCloseTo(45.0, 1);
 
-    // Mach/qbar derived from alt=200m, vel=80 m/s
+    // Mach/qbar still derived from alt=200m, vel=80 m/s (GS sends 0)
     // ISA: rho≈1.197 kg/m³ → qbar≈3829 Pa; speed-of-sound≈340 m/s → mach≈0.235
     expect(snap.mach).toBeGreaterThan(0.2);
     expect(snap.mach).toBeLessThan(0.3);
