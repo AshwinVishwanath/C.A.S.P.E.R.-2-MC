@@ -241,10 +241,10 @@ describe('TelemetryStore', () => {
     expect(snap.recovery_flag).toBe(true);
     expect(snap.recovery_method).toBe(1);
     expect(snap.recovery_confidence).toBe(95);
-    // Euler derived from quat [0.707, 0.707, 0, 0] → roll ≈ 90°, pitch ≈ 0°, yaw ≈ 0°
+    // Euler derived from quat [0.707, 0.707, 0, 0] (rotation about body X) → pitch ≈ 90°, roll ≈ 0°, yaw ≈ 0°
     // (packet euler fields 5.0/2.0/-1.0 are intentionally ignored)
-    expect(snap.roll_deg).toBeCloseTo(90, 0);
-    expect(Math.abs(snap.pitch_deg)).toBeLessThan(1);
+    expect(snap.pitch_deg).toBeCloseTo(90, 0);
+    expect(Math.abs(snap.roll_deg)).toBeLessThan(1);
     expect(Math.abs(snap.yaw_deg)).toBeLessThan(1);
     // mach/qbar derived from alt=200, vel=80 (packet mach=0.85/qbar=45000 are ignored)
     // ISA: rho≈1.197 kg/m³ at 200m → qbar≈3829 Pa; a≈339.9 m/s → mach≈0.235
@@ -639,9 +639,9 @@ describe('TelemetryStore', () => {
     store.update_from_gs_telem(msg);
     const snap = store.get_snapshot();
 
-    // Euler must be derived from quat [0.707, 0.707, 0, 0] → roll ≈ 90°
-    expect(snap.roll_deg).toBeGreaterThan(80);      // ≈ 90°
-    expect(Math.abs(snap.pitch_deg)).toBeLessThan(1); // ≈ 0°
+    // Euler must be derived from quat [0.707, 0.707, 0, 0] (rotation about body X) → pitch ≈ 90°
+    expect(snap.pitch_deg).toBeGreaterThan(80);      // ≈ 90°
+    expect(Math.abs(snap.roll_deg)).toBeLessThan(1);  // ≈ 0°
     expect(Math.abs(snap.yaw_deg)).toBeLessThan(1);   // ≈ 0°
 
     // Mach/qbar derived from alt=200m, vel=80 m/s

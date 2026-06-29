@@ -87,10 +87,12 @@ export function compute_qbar(vel_mps: number, alt_m: number): number {
 /**
  * Convert quaternion [w, x, y, z] to Euler angles [roll, pitch, yaw] in degrees.
  *
- * Uses aerospace convention (ZYX rotation order):
- *   roll  = atan2(2*(w*x + y*z), 1 - 2*(x^2 + y^2))
- *   pitch = asin(clamp(2*(w*y - z*x), -1, 1))
- *   yaw   = atan2(2*(w*z + x*y), 1 - 2*(y^2 + z^2))
+ * Matches the flight computer's authoritative convention (casper_quat_to_euler,
+ * App/nav/casper_quat.c). Body frame: Y = nose / thrust axis (the antenna axis
+ * in the current bench orientation):
+ *   roll  = asin(clamp(2*(w*y - z*x), -1, 1))         — rotation about body Y (nose/antenna spin)
+ *   pitch = atan2(2*(w*x + y*z), 1 - 2*(x^2 + y^2))   — rotation about body X (lateral tilt)
+ *   yaw   = atan2(2*(w*z + x*y), 1 - 2*(y^2 + z^2))   — rotation about body Z (heading)
  *
  * @param q - Quaternion as [w, x, y, z].
  * @returns Euler angles as [roll_deg, pitch_deg, yaw_deg].
@@ -100,17 +102,17 @@ export function quat_to_euler_deg(
 ): [number, number, number] {
   const [w, x, y, z] = q;
 
-  // Roll (x-axis rotation)
-  const sinr_cosp = 2.0 * (w * x + y * z);
-  const cosr_cosp = 1.0 - 2.0 * (x * x + y * y);
-  const roll = Math.atan2(sinr_cosp, cosr_cosp);
+  // Roll — rotation about body Y (nose/antenna axis). Clamp to [-1, 1] to avoid NaN from asin.
+  const sinr = 2.0 * (w * y - z * x);
+  const sinr_clamped = Math.max(-1.0, Math.min(1.0, sinr));
+  const roll = Math.asin(sinr_clamped);
 
-  // Pitch (y-axis rotation) — clamp to [-1, 1] to avoid NaN from asin
-  const sinp = 2.0 * (w * y - z * x);
-  const sinp_clamped = Math.max(-1.0, Math.min(1.0, sinp));
-  const pitch = Math.asin(sinp_clamped);
+  // Pitch — rotation about body X (lateral tilt).
+  const sinp_cosp = 2.0 * (w * x + y * z);
+  const cosp_cosp = 1.0 - 2.0 * (x * x + y * y);
+  const pitch = Math.atan2(sinp_cosp, cosp_cosp);
 
-  // Yaw (z-axis rotation)
+  // Yaw — rotation about body Z (heading).
   const siny_cosp = 2.0 * (w * z + x * y);
   const cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
   const yaw = Math.atan2(siny_cosp, cosy_cosp);

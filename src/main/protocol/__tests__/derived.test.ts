@@ -103,6 +103,10 @@ describe('compute_qbar', () => {
 
 describe('quat_to_euler_deg', () => {
   const TOLERANCE = 0.1; // degrees
+  // FC casper_quat_to_euler convention (body Y = nose/thrust axis):
+  //   roll  = asin(2*(w*y - z*x))     — rotation about body Y (nose/antenna)
+  //   pitch = atan2(2*(w*x + y*z), …) — rotation about body X (lateral tilt)
+  //   yaw   = atan2(2*(w*z + x*y), …) — rotation about body Z (heading)
 
   it('should return [0, 0, 0] for identity quaternion', () => {
     const [roll, pitch, yaw] = quat_to_euler_deg([1, 0, 0, 0]);
@@ -111,26 +115,27 @@ describe('quat_to_euler_deg', () => {
     expect(yaw).toBeCloseTo(0, 1);
   });
 
-  it('should decode 90-degree roll correctly', () => {
-    // q = [cos(45deg), sin(45deg), 0, 0]
-    const c = Math.cos(Math.PI / 4);
-    const s = Math.sin(Math.PI / 4);
-    const [roll, pitch, yaw] = quat_to_euler_deg([c, s, 0, 0]);
-    expect(roll).toBeCloseTo(90.0, 0);
-    expect(pitch).toBeCloseTo(0, 0);
-    expect(yaw).toBeCloseTo(0, 0);
-  });
-
-  it('should decode 90-degree pitch correctly', () => {
+  it('should decode 90-degree roll (rotation about body Y) correctly', () => {
+    // Roll is the body-Y rotation → q = [cos(45deg), 0, sin(45deg), 0]
     const c = Math.cos(Math.PI / 4);
     const s = Math.sin(Math.PI / 4);
     const [roll, pitch, yaw] = quat_to_euler_deg([c, 0, s, 0]);
+    expect(roll).toBeCloseTo(90.0, 0);
+    expect(Math.abs(pitch)).toBeLessThan(TOLERANCE);
+    expect(Math.abs(yaw)).toBeLessThan(TOLERANCE);
+  });
+
+  it('should decode 90-degree pitch (rotation about body X) correctly', () => {
+    // Pitch is the body-X rotation → q = [cos(45deg), sin(45deg), 0, 0]
+    const c = Math.cos(Math.PI / 4);
+    const s = Math.sin(Math.PI / 4);
+    const [roll, pitch, yaw] = quat_to_euler_deg([c, s, 0, 0]);
     expect(Math.abs(roll)).toBeLessThan(TOLERANCE);
     expect(pitch).toBeCloseTo(90.0, 0);
     expect(Math.abs(yaw)).toBeLessThan(TOLERANCE);
   });
 
-  it('should decode 90-degree yaw correctly', () => {
+  it('should decode 90-degree yaw (rotation about body Z) correctly', () => {
     const c = Math.cos(Math.PI / 4);
     const s = Math.sin(Math.PI / 4);
     const [roll, pitch, yaw] = quat_to_euler_deg([c, 0, 0, s]);
@@ -139,14 +144,14 @@ describe('quat_to_euler_deg', () => {
     expect(yaw).toBeCloseTo(90.0, 0);
   });
 
-  it('should decode 45-degree roll correctly', () => {
+  it('should decode 45-degree roll (about body Y) correctly', () => {
     const half = Math.PI / 8; // half of 45 degrees
     const [roll, pitch, yaw] = quat_to_euler_deg([
-      Math.cos(half), Math.sin(half), 0, 0
+      Math.cos(half), 0, Math.sin(half), 0
     ]);
     expect(roll).toBeCloseTo(45.0, 0);
-    expect(pitch).toBeCloseTo(0, 0);
-    expect(yaw).toBeCloseTo(0, 0);
+    expect(Math.abs(pitch)).toBeLessThan(TOLERANCE);
+    expect(Math.abs(yaw)).toBeLessThan(TOLERANCE);
   });
 
   it('should handle 180-degree yaw', () => {
@@ -155,19 +160,19 @@ describe('quat_to_euler_deg', () => {
     expect(Math.abs(yaw)).toBeCloseTo(180.0, 0);
   });
 
-  it('should handle negative roll', () => {
+  it('should handle negative roll (about body Y)', () => {
     const c = Math.cos(Math.PI / 4);
     const s = Math.sin(Math.PI / 4);
-    const [roll, pitch, yaw] = quat_to_euler_deg([c, -s, 0, 0]);
+    const [roll] = quat_to_euler_deg([c, 0, -s, 0]);
     expect(roll).toBeCloseTo(-90.0, 0);
   });
 
-  it('should handle gimbal lock region (pitch near 90)', () => {
-    // Near gimbal lock: pitch = 89 degrees
+  it('should handle gimbal lock region (roll near 90)', () => {
+    // Roll is the asin term → singular near ±90. Rotate 89° about body Y.
     const half = (89 * Math.PI / 180) / 2;
-    const [roll, pitch, yaw] = quat_to_euler_deg([
+    const [roll] = quat_to_euler_deg([
       Math.cos(half), 0, Math.sin(half), 0
     ]);
-    expect(pitch).toBeCloseTo(89.0, 0);
+    expect(roll).toBeCloseTo(89.0, 0);
   });
 });

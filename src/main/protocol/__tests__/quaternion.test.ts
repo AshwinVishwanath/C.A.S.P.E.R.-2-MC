@@ -106,8 +106,8 @@ describe('unpack_quaternion', () => {
     expect(result[3]).toBeCloseTo(0.0, 3);
   });
 
-  it('should decode 90-degree pitch quaternion (with clipping)', () => {
-    // 90 degrees around Y axis: q = [cos(45deg), 0, sin(45deg), 0]
+  it('should decode 90-degree roll quaternion (body Y, with clipping)', () => {
+    // 90 degrees around Y axis (= roll in FC convention): q = [cos(45deg), 0, sin(45deg), 0]
     // Both w and y = 0.707, which exceeds 2047/4096 = 0.4998.
     // The non-dropped 0.707 component clips to 0.4998, causing ~30° error.
     // This is the documented worst-case from ORIENTATION_SPEC.md §8.2.
@@ -123,8 +123,8 @@ describe('unpack_quaternion', () => {
     expect(angle_err).toBeLessThan(35);
   });
 
-  it('should decode moderate pitch quaternion accurately', () => {
-    // 30 degrees around Y axis: q = [cos(15deg), 0, sin(15deg), 0]
+  it('should decode moderate roll quaternion accurately', () => {
+    // 30 degrees around Y axis (= roll in FC convention): q = [cos(15deg), 0, sin(15deg), 0]
     // All components < 0.5, no clipping occurs
     const half = (30 * Math.PI / 180) / 2;
     const original: [number, number, number, number] = [Math.cos(half), 0, Math.sin(half), 0];
@@ -136,8 +136,8 @@ describe('unpack_quaternion', () => {
     expect(angle_err).toBeLessThan(0.1);
   });
 
-  it('should decode 45-degree roll quaternion', () => {
-    // 45 degrees around X axis: q = [cos(22.5deg), sin(22.5deg), 0, 0]
+  it('should decode 45-degree pitch quaternion', () => {
+    // 45 degrees around X axis (= pitch in FC convention): q = [cos(22.5deg), sin(22.5deg), 0, 0]
     const half = Math.PI / 8;
     const original: [number, number, number, number] = [
       Math.cos(half), Math.sin(half), 0, 0
@@ -205,8 +205,8 @@ describe('unpack_quaternion', () => {
       [0, 0, 1, 0],
       [0, 0, 0, 1],
       [0.5, 0.5, 0.5, 0.5],
-      [0.9239, 0.3827, 0, 0],   // 45 deg roll
-      [0.9239, 0, 0.3827, 0],   // 45 deg pitch
+      [0.9239, 0.3827, 0, 0],   // 45 deg pitch (body X)
+      [0.9239, 0, 0.3827, 0],   // 45 deg roll (body Y)
       [0.9239, 0, 0, 0.3827],   // 45 deg yaw
     ];
 
