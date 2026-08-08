@@ -82,7 +82,15 @@ export enum EventType {
    * event_data (u16): low byte = pyro_live_mask (bits 0-2 = channel 0-2 live);
    * high byte bit0 = stored_config_valid.
    */
-  PyroMode = 0x09
+  PyroMode = 0x09,
+  /**
+   * LogicShadow — a SHADOW-mode Logic-VM decision edge (docs/specs/MC_FC_ALIGNMENT.md
+   * §13c). Emitted on each FIRE_PYRO rising edge while `logic_mode == SHADOW`; the
+   * decision is logged, never actuated. Rate-limited to one per channel per 500 ms.
+   * event_data (u16): high byte = pyro channel, low byte = min(duration_ms / 10, 255)
+   * (duration in 10 ms units, clamped).
+   */
+  LogicShadow = 0x0A
 }
 
 // ---------------------------------------------------------------------------

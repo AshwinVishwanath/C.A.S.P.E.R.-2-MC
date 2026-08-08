@@ -11,7 +11,7 @@ import { SerialPortPicker } from '../components/SerialPortPicker.jsx';
 import FlightConfigEditor from '../components/FlightConfigEditor.jsx';
 import { useFlightConfig } from '../hooks/useFlightConfig.js';
 
-import PyroEditor from '../pyro/PyroEditor.jsx';
+import PyroEditor, { LogicModeControl } from '../pyro/PyroEditor.jsx';
 import { pyroReducer, initialState } from '../pyro/reducer.js';
 import { buildSeedGraph } from '../pyro/seed.js';
 import { toLogicGraphIR } from '../pyro/ir.js';
@@ -244,8 +244,15 @@ export default function SetupTab({ serial, flightSim }) {
   const [uploadStatus, setUploadStatus] = useState(null);
   const [uploadDetail, setUploadDetail] = useState('');
 
+  // Logic-VM program authority mode — 'off' | 'shadow' ('active' is not
+  // selectable this sprint, see LogicModeControl). Default 'off' is the safe
+  // default (docs/specs/MC_FC_ALIGNMENT.md §13a). Lifted here so it survives
+  // tab switches alongside pyroState, and so both the header "UPLOAD TO FC"
+  // button and the PyroEditor's own toolbar button share one source of truth.
+  const [logicMode, setLogicMode] = useState('off');
+
   const handleUpload = useCallback(async () => {
-    const ir = toLogicGraphIR(pyroState);
+    const ir = toLogicGraphIR(pyroState, { mode: logicMode });
     const api = typeof window !== 'undefined' ? window.casper : null;
     if (!api || typeof api.upload_logic !== 'function') {
       setUploadStatus('err');
@@ -293,10 +300,10 @@ export default function SetupTab({ serial, flightSim }) {
       setUploadStatus('err');
       setUploadDetail(String((e && e.message) || e));
     }
-  }, [pyroState]);
+  }, [pyroState, logicMode]);
 
   const handleExport = useCallback(() => {
-    const json = JSON.stringify(toLogicGraphIR(pyroState), null, 2);
+    const json = JSON.stringify(toLogicGraphIR(pyroState, { mode: logicMode }), null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -304,7 +311,7 @@ export default function SetupTab({ serial, flightSim }) {
     a.download = `pyro-logic-${Date.now()}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [pyroState]);
+  }, [pyroState, logicMode]);
 
   const handleImport = useCallback(
     (jsonOrText) => {
@@ -412,6 +419,7 @@ export default function SetupTab({ serial, flightSim }) {
             EXPORT
           </Btn>
           <ImportButton onImport={handleImport} />
+          <LogicModeControl T={T} mode={logicMode} onChange={setLogicMode} />
           <Btn kind="primary" onClick={handleUpload} icon={<Icon name="upload" size={14} />}>
             UPLOAD TO FC
           </Btn>
@@ -434,6 +442,8 @@ export default function SetupTab({ serial, flightSim }) {
           onImport={handleImport}
           flightSim={flightSim}
           height="calc(100vh - 480px)"
+          logicMode={logicMode}
+          onLogicModeChange={setLogicMode}
         />
       </div>
 

@@ -12,23 +12,35 @@
  *   Byte 4:  drop[1:0] | rsvd[1:0] | A[11:8]
  *
  * Each non-dropped component is a signed 12-bit integer scaled by
- * QUAT_SCALE = 4096.0 (component = raw_int12 / 4096).
+ * QUAT_SCALE = 2896.309 (component = raw_int12 / 2896.309).
  *
  * The dropped component is the one with the largest absolute value.
  * It is reconstructed as sqrt(1 - a^2 - b^2 - c^2), always positive
  * (the encoder negates the entire quaternion if needed so the dropped
  * component is positive).
  *
- * See ORIENTATION_SPEC.md §5 for the authoritative encoding reference.
+ * See ORIENTATION_SPEC.md §5 (FC repo) for the authoritative encoding
+ * reference -- updated to 2896.309 in the same Window-2 change as this file.
  *
  * @module protocol/quaternion
  */
 
 /**
  * Scale factor for smallest-three quaternion encoding.
- * Per ORIENTATION_SPEC.md §5.1: component = raw_int12 / 4096.0.
+ *
+ * MC_FC_ALIGNMENT.md S15b (2026-08-08, revised same day): corrected from
+ * the defective 4096 to 2896.309 = 2048 * sqrt(2) -- the value the DEPLOYED
+ * GS FIRMWARE already uses (C.A.S.P.E.R.-2 repo, QUAT_PACK_INT12_SCALE),
+ * so FC encode, GS decode (relayed euler), and this direct-USB decode all
+ * share one constant. A component at the true magnitude bound (1/sqrt(2))
+ * rounds to 2048 and the encoder clamps it to 2047: a benign 1-LSB edge
+ * error (~3.5e-4). The old 4096 saturated any component whose magnitude
+ * exceeded 2047/4096 = 0.49976 -- nearly every non-axis-aligned attitude --
+ * silently corrupting the decoded quaternion. This MUST match the FC's
+ * flight/pack/quat_pack.h QUAT_PACK_SCALE exactly; both changed together.
+ * The GS needs no change -- see MC_FC_ALIGNMENT.md S15b's revision note.
  */
-const QUAT_SCALE = 4096.0;
+const QUAT_SCALE = 2896.309;
 
 /**
  * Decode a smallest-three packed quaternion (5 bytes, little-endian) to [w, x, y, z].

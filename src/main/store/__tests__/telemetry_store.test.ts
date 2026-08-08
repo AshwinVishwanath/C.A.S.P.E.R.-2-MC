@@ -412,6 +412,68 @@ describe('TelemetryStore', () => {
     expect(snap.apogee_alt_m).toBe(2500);
   });
 
+  // 11b. FC_EVT_PYRO_MODE (0x09) decode — docs/specs/MC_FC_ALIGNMENT.md §7
+  it('decodes FC_EVT_PYRO_MODE (0x09): live_mask + stored_config_valid, and updates snapshot', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2000);
+    // live_mask = 0b101 (channels 0 and 2 live), stored_config_valid = 1
+    const event_data = (1 << 8) | 0b101;
+    store.update_from_event(make_fc_event({
+      event_type: EventType.PyroMode,
+      event_data,
+      flight_time_s: 0.0
+    }));
+    const snap = store.get_snapshot();
+    expect(snap.events).toHaveLength(1);
+    expect(snap.events[0].type).toBe(EventType.PyroMode);
+    expect(snap.events[0].type_name).toBe('PYRO MODE: live_mask=0x05 stored_config=VALID');
+    expect(snap.pyro_live_mask).toBe(0b101);
+    expect(snap.stored_config_valid).toBe(true);
+  });
+
+  it('decodes FC_EVT_PYRO_MODE (0x09) with stored_config invalid (defaults)', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2000);
+    store.update_from_event(make_fc_event({
+      event_type: EventType.PyroMode,
+      event_data: 0x0000, // no live channels, no stored config
+      flight_time_s: 0.0
+    }));
+    const snap = store.get_snapshot();
+    expect(snap.events[0].type_name).toBe('PYRO MODE: live_mask=0x00 stored_config=DEFAULT');
+    expect(snap.pyro_live_mask).toBe(0);
+    expect(snap.stored_config_valid).toBe(false);
+  });
+
+  // 11c. FC_EVT_LOGIC_SHADOW (0x0A) decode — docs/specs/MC_FC_ALIGNMENT.md §13c
+  it('decodes FC_EVT_LOGIC_SHADOW (0x0A): channel + duration_ms from (ch<<8)|min(dur/10,255)', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(3000);
+    // Channel 1, duration 1000ms → encoded low byte = min(1000/10, 255) = 100
+    const event_data = (1 << 8) | 100;
+    store.update_from_event(make_fc_event({
+      event_type: EventType.LogicShadow,
+      event_data,
+      flight_time_s: 42.5
+    }));
+    const snap = store.get_snapshot();
+    expect(snap.events).toHaveLength(1);
+    expect(snap.events[0].type).toBe(EventType.LogicShadow);
+    expect(snap.events[0].data).toBe(event_data);
+    expect(snap.events[0].flight_time_s).toBe(42.5);
+    expect(snap.events[0].type_name).toBe('SHADOW: CH1 would-fire 1000ms');
+  });
+
+  it('decodes FC_EVT_LOGIC_SHADOW (0x0A) at the clamp ceiling (duration >= 2550ms)', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(3000);
+    // Channel 3, any duration >= 2550ms clamps the encoded byte to 255
+    const event_data = (3 << 8) | 255;
+    store.update_from_event(make_fc_event({
+      event_type: EventType.LogicShadow,
+      event_data,
+      flight_time_s: 43.0
+    }));
+    const snap = store.get_snapshot();
+    expect(snap.events[0].type_name).toBe('SHADOW: CH3 would-fire 2550ms');
+  });
+
   // 12. set_connection disconnect resets values but preserves events
   it('set_connection disconnect resets values but preserves events', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1000);

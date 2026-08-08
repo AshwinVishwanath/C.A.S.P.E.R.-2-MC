@@ -220,6 +220,22 @@ describe("toLogicGraphIR", () => {
     expect(deserialised.nodes).toHaveLength(7);
     expect(deserialised.edges).toHaveLength(4);
   });
+
+  it("defaults mode to 'off' when opts is omitted (MC_FC_ALIGNMENT.md §13a)", () => {
+    const seed  = buildSeedGraph();
+    const state = initialState(seed);
+    const ir    = toLogicGraphIR(state);
+
+    expect(ir.mode).toBe("off");
+  });
+
+  it("passes through an explicit mode from opts", () => {
+    const seed  = buildSeedGraph();
+    const state = initialState(seed);
+    const ir    = toLogicGraphIR(state, { mode: "shadow" });
+
+    expect(ir.mode).toBe("shadow");
+  });
 });
 
 // ---------------------------------------------------------------------------

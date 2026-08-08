@@ -376,3 +376,101 @@ describe('compile_logic_graph — LOAD_CONST_B emission', () => {
     expect(result.bytes[15]).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test 11: flags byte — logic_mode emission matrix (MC_FC_ALIGNMENT.md §13a)
+// ---------------------------------------------------------------------------
+
+describe('compile_logic_graph — logic_mode flags-byte emission matrix', () => {
+  const base: Omit<LogicGraphIR, 'mode'> = { nodes: [], edges: [] };
+
+  it('mode absent → bytes[3] == 0x00 (OFF, matches pre-Window-2 default)', () => {
+    const result = compile_logic_graph({ ...base });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bytes[3]).toBe(0x00);
+  });
+
+  it("mode 'off' → bytes[3] == 0x00", () => {
+    const result = compile_logic_graph({ ...base, mode: 'off' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bytes[3]).toBe(0x00);
+  });
+
+  it("mode 'shadow' → bytes[3] == 0x01", () => {
+    const result = compile_logic_graph({ ...base, mode: 'shadow' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.bytes[3]).toBe(0x01);
+  });
+
+  it("mode 'active' → rejected by the MC compiler (defense-in-depth ahead of the FC's own NACK 0xE0/BadState)", () => {
+    const result = compile_logic_graph({ ...base, mode: 'active' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors).toEqual(['ACTIVE mode is post-flight only — rejected by MC']);
+  });
+
+  it('reserved bits 7:2 are always 0 for the storable modes (off / shadow)', () => {
+    for (const mode of ['off', 'shadow'] as const) {
+      const result = compile_logic_graph({ ...base, mode });
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.bytes[3] & 0xFC).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 12: same graph body compiled OFF vs SHADOW yields DIFFERENT hashes
+// (the mode lives inside the CRC-covered blob — §13a: "a program's authority
+// level cannot be altered without changing its hash").
+// ---------------------------------------------------------------------------
+
+describe('compile_logic_graph — hash covers mode (off vs shadow diverge)', () => {
+  const graph_body: Omit<LogicGraphIR, 'mode'> = {
+    nodes: [
+      { id: 'n_evt',  kind: 'fsm_event', params: { event: 'apogee' } },
+      { id: 'n_pyro', kind: 'pyro_1',   params: { duration: 1000, role: 'Apogee' } },
+    ],
+    edges: [
+      { id: 'e1', from: { node: 'n_evt', port: 'out' }, to: { node: 'n_pyro', port: 'a' } },
+    ],
+  };
+
+  it('off and shadow compiles of the identical graph produce different CRC hashes', () => {
+    const off = compile_logic_graph({ ...graph_body, mode: 'off' });
+    const shadow = compile_logic_graph({ ...graph_body, mode: 'shadow' });
+    expect(off.ok).toBe(true);
+    expect(shadow.ok).toBe(true);
+    if (!off.ok || !shadow.ok) return;
+    expect(off.hash).not.toBe(shadow.hash);
+  });
+
+  it('off and shadow blobs are identical except for the flags byte and trailing CRC', () => {
+    const off = compile_logic_graph({ ...graph_body, mode: 'off' });
+    const shadow = compile_logic_graph({ ...graph_body, mode: 'shadow' });
+    expect(off.ok).toBe(true);
+    expect(shadow.ok).toBe(true);
+    if (!off.ok || !shadow.ok) return;
+    expect(off.bytes.length).toBe(shadow.bytes.length);
+    // Same length, differ only at flags (offset 3) and the 4 trailing CRC bytes.
+    const crc_start = off.bytes.length - 4;
+    for (let i = 0; i < off.bytes.length; i++) {
+      if (i === 3 || i >= crc_start) continue;
+      expect(shadow.bytes[i]).toBe(off.bytes[i]);
+    }
+    expect(off.bytes[3]).toBe(0x00);
+    expect(shadow.bytes[3]).toBe(0x01);
+  });
+
+  it('undefined mode and explicit "off" mode hash identically (default is OFF)', () => {
+    const implicit = compile_logic_graph({ ...graph_body });
+    const explicit = compile_logic_graph({ ...graph_body, mode: 'off' });
+    expect(implicit.ok).toBe(true);
+    expect(explicit.ok).toBe(true);
+    if (!implicit.ok || !explicit.ok) return;
+    expect(implicit.hash).toBe(explicit.hash);
+  });
+});

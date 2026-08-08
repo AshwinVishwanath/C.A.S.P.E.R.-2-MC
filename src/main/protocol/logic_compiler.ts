@@ -31,6 +31,7 @@ import {
   LOGIC_VM_VERSION,
   LOGIC_VM_HEADER_SIZE,
   LOGIC_VM_CRC_SIZE,
+  logic_mode_flags,
 } from './logic_program';
 import { crc32_compute } from './crc32';
 
@@ -327,6 +328,19 @@ function role_tag(role: unknown): number {
 
 export function compile_logic_graph(graph: LogicGraphIR): CompileResult {
   const errors: string[] = [];
+
+  // --- Authority-mode gate (MC_FC_ALIGNMENT.md §13a) ---
+  // ACTIVE is post-flight only this sprint ("Active is greyed out" in the
+  // editor UI). The FC will NACK 0xE0/BadState for logic_mode == ACTIVE (or
+  // 0b11 / reserved-bits-set) at upload, but defense-in-depth for a
+  // sole-fire-authority mode means the MC must not even frame it. This
+  // compiler is the single choke point both CH_UPLOAD_LOGIC and
+  // CH_COMPILE_LOGIC go through, so gating here covers any caller —
+  // renderer, a future import/deserialisation path, or a crafted IPC call —
+  // regardless of whether the renderer UI happened to disable the control.
+  if (graph.mode !== undefined && graph.mode !== 'off' && graph.mode !== 'shadow') {
+    return { ok: false, errors: ['ACTIVE mode is post-flight only — rejected by MC'] };
+  }
 
   // --- Build lookup maps ---
   const node_map = new Map<string, LogicNode>();
@@ -730,7 +744,10 @@ export function compile_logic_graph(graph: LogicGraphIR): CompileResult {
   // [0]   MAGIC_1
   // [1]   MAGIC_2
   // [2]   version
-  // [3]   flags (0)
+  // [3]   flags — logic_mode in bits 1:0 (MC_FC_ALIGNMENT.md §13a); bits 7:2
+  //        reserved = 0. Lives inside the blob, so the trailing CRC (= ACK
+  //        hash) covers it: authority level cannot change without the hash
+  //        changing too.
   // [4-5] total_length u16 LE
   // [6-7] slot_count u16 LE
   // [8-9] op_count u16 LE
@@ -738,7 +755,7 @@ export function compile_logic_graph(graph: LogicGraphIR): CompileResult {
   blob[pos++] = LOGIC_VM_MAGIC_1;
   blob[pos++] = LOGIC_VM_MAGIC_2;
   blob[pos++] = LOGIC_VM_VERSION;
-  blob[pos++] = 0x00;  // flags
+  blob[pos++] = logic_mode_flags(graph.mode);  // flags — logic_mode
 
   blob[pos++] = total_length & 0xFF;
   blob[pos++] = (total_length >>> 8) & 0xFF;

@@ -23,7 +23,7 @@ Offset  Size  Type    Field
 0       1     u8      MAGIC_1       = 0xCA
 1       1     u8      MAGIC_2       = 0x5A
 2       1     u8      version       = 0x01
-3       1     u8      flags         = 0x00 (reserved)
+3       1     u8      flags         logic_mode in bits 1:0 (see "flags byte" below)
 4       2     u16 LE  total_length  entire blob length including this header and CRC
 6       2     u16 LE  slot_count    number of f32 slots the VM must allocate
 8       2     u16 LE  op_count      number of opcodes in the op stream
@@ -33,6 +33,28 @@ N-4     4     u32 LE  crc32         CRC-32/ISO-HDLC over bytes [0 .. N-5] inclus
 ```
 
 The "hash" used for ACK matching is the trailing `crc32` value.
+
+---
+
+## flags byte — logic_mode (added 2026-08-08, MC_FC_ALIGNMENT §13a)
+
+Header byte 3 (`flags`), previously reserved `= 0x00`, carries the program's authority
+mode. Because it lives inside the blob, the trailing CRC (= the ACK hash) covers it — a
+program's authority level cannot be changed without changing its hash.
+
+```
+bits 1:0  logic_mode   00 = OFF   01 = SHADOW   10 = ACTIVE   11 = invalid
+bits 7:2  reserved, MUST be 0
+```
+
+- The MC compiler writes `flags` from an **Off / Shadow** radio control in the editor
+  UI. **Active is greyed out ("post-flight")** in the MC this sprint.
+- **FC validator (this sprint):** `logic_mode == ACTIVE (0b10)`, `== 0b11`, or any
+  reserved bit set → **NACK 0xE0 code 0x02 (BadState)**, nothing persisted. Only
+  `0x00` (OFF) and `0x01` (SHADOW) are storable until the active-authority sprint lands
+  post-September.
+- **Compatibility:** blobs emitted before this date all carry `flags == 0x00` (OFF) and
+  remain valid — no recompile needed.
 
 ---
 
@@ -67,7 +89,7 @@ Each opcode entry starts with the 1-byte opcode, followed by its operands. All s
 | Opcode | Mnemonic | Size           | Operands                                                        | Description                          |
 |--------|---------|----------------|------------------------------------------------------------------|--------------------------------------|
 | 0x10   | CMP     | 12             | out:u16, a:u16, b:u16, op:u8, hyst:f32                          | Compare two slots with hysteresis    |
-| 0x11   | THRESH  | 12 + 2*count   | out:u16, count:u8, ins:[u16 × count], op:u8, threshold:f32, hyst:f32 | Threshold with multiple inputs  |
+| 0x11   | THRESH  | 13 + 2*count   | out:u16, count:u8, ins:[u16 × count], op:u8, threshold:f32, hyst:f32 | Threshold with multiple inputs  |
 | 0x12   | AND     | 4 + 2*count    | out:u16, count:u8, ins:[u16 × count]                            | Logical AND of count bool slots      |
 | 0x13   | OR      | 4 + 2*count    | out:u16, count:u8, ins:[u16 × count]                            | Logical OR of count bool slots       |
 | 0x14   | NOT     | 5              | out:u16, a:u16                                                  | Logical NOT                          |
@@ -140,20 +162,28 @@ Each opcode entry starts with the 1-byte opcode, followed by its operands. All s
 
 ## FSM State IDs
 
-| ID | Name     |
-|----|----------|
-| 0  | PAD      |
-| 1  | BOOST    |
-| 2  | COAST    |
-| 3  | COAST_1  |
-| 4  | SUSTAIN  |
-| 5  | COAST_2  |
-| 6  | APOGEE   |
-| 7  | DROGUE   |
-| 8  | MAIN     |
-| 9  | RECOVERY |
-| 10 | TUMBLE   |
-| 11 | LANDED   |
+Normative mapping, pinned in MC_FC_ALIGNMENT.md §13e (2026-08-08) and verified against
+FC `flight/telemetry/tlm_types.h` (`FSM_STATE_*`) — the VM `state_id` **is** the FC
+`fsm_state_t` value (identity mapping, no translation on the FC). The "Autonomous?"
+column records whether Casper-3's `flight_fsm.c` actually enters the state during
+sensor-driven flight; states marked "force only" are reachable solely via
+`flight_fsm_force_state()` (debug/bench) and **`FSM_IS`/`FSM_IN` on them is false for an
+entire autonomous flight.**
+
+| ID | Name     | FC value | Autonomous? | Notes for graph authors |
+|----|----------|----------|-------------|--------------------------|
+| 0  | PAD      | 0x0 | yes (initial)       | pre-launch |
+| 1  | BOOST    | 0x1 | yes                 | any powered phase, incl. re-light stages |
+| 2  | COAST    | 0x2 | yes                 | unpowered ascent; **apogee/drogue charge fires here** |
+| 3  | COAST_1  | 0x3 | force only          | never true autonomously |
+| 4  | SUSTAIN  | 0x4 | force only          | never true autonomously (staging reuses BOOST/COAST) |
+| 5  | COAST_2  | 0x5 | force only          | never true autonomously |
+| 6  | APOGEE   | 0x6 | yes                 | after apogee, before main deploy |
+| 7  | DROGUE   | 0x7 | force only          | **no distinct DROGUE state** — FC goes COAST→APOGEE→MAIN; gate drogue on `FSM_EVENT(apogee)`, NOT `FSM_IS(DROGUE)` |
+| 8  | MAIN     | 0x8 | yes                 | after main deploy, before landing |
+| 9  | RECOVERY | 0x9 | yes (LANDED + 5 min) | low-power recovery |
+| 10 | TUMBLE   | 0xA | force only          | never true autonomously |
+| 11 | LANDED   | 0xB | yes                 | landed |
 
 ---
 

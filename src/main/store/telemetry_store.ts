@@ -561,6 +561,13 @@ export class TelemetryStore {
         type_name = `PYRO MODE: live_mask=0x${(data & 0xFF).toString(16).padStart(2, '0')} ` +
           `stored_config=${((data >> 8) & 0x01) ? 'VALID' : 'DEFAULT'}`;
         break;
+      case EventType.LogicShadow: {
+        // §13c: high byte = channel, low byte = min(duration_ms / 10, 255) — 10ms units, clamped.
+        const ch = (data >> 8) & 0xFF;
+        const dur_ms = (data & 0xFF) * 10;
+        type_name = `SHADOW: CH${ch} would-fire ${dur_ms}ms`;
+        break;
+      }
       default:
         type_name = `UNKNOWN EVENT 0x${type.toString(16)} data=${data}`;
         break;

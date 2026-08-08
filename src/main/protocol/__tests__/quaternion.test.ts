@@ -9,19 +9,27 @@
  *   Byte 3: A[7:0]
  *   Byte 4: drop[1:0] | rsvd[1:0] | A[11:8]  (MSB)
  *
- * Scale factor: QUAT_SCALE = 4096.0 (per ORIENTATION_SPEC.md §5.1).
+ * Scale factor: QUAT_SCALE = 2896.309 (MC_FC_ALIGNMENT.md S15b revision
+ * note, 2026-08-08 -- matches the deployed GS firmware; see quaternion.ts).
  *
- * Accuracy target: with QUAT_SCALE = 4096 the quantisation step is ~0.000244,
- * giving round-trip accuracy well under 0.1 degrees.
+ * Accuracy target: with QUAT_SCALE = 2896.309 the quantisation step is
+ * ~0.000345, giving round-trip accuracy well under 0.1 degrees. A survivor
+ * at the true magnitude bound (1/sqrt(2)) clamps by exactly 1 LSB at the
+ * +edge (benign, by design) -- unlike the old 4096 scale's ~849-LSB clamp.
  */
 
 import { describe, it, expect } from 'vitest';
 import { unpack_quaternion } from '../quaternion';
 
 /**
- * Scale factor matching the FC firmware (ORIENTATION_SPEC.md §5.1).
+ * Scale factor matching the FC firmware (MC_FC_ALIGNMENT.md S15b).
  */
-const QUAT_SCALE = 4096.0;
+const QUAT_SCALE = 2896.309;
+
+/** The old, defective scale -- kept ONLY so a test below can prove it WOULD
+ * have clamped a component at the true 1/sqrt(2) magnitude bound by ~849
+ * LSB, where QUAT_SCALE (2896.309) clamps by at most 1 LSB. */
+const OLD_DEFECTIVE_QUAT_SCALE = 4096.0;
 
 /**
  * Helper: pack a quaternion using the FC's smallest-three encoding.
@@ -106,11 +114,14 @@ describe('unpack_quaternion', () => {
     expect(result[3]).toBeCloseTo(0.0, 3);
   });
 
-  it('should decode 90-degree roll quaternion (body Y, with clipping)', () => {
+  it('should decode 90-degree roll quaternion (body Y) accurately -- S15b fixes the old clamp', () => {
     // 90 degrees around Y axis (= roll in FC convention): q = [cos(45deg), 0, sin(45deg), 0]
-    // Both w and y = 0.707, which exceeds 2047/4096 = 0.4998.
-    // The non-dropped 0.707 component clips to 0.4998, causing ~30° error.
-    // This is the documented worst-case from ORIENTATION_SPEC.md §8.2.
+    // Both w and y = 1/sqrt(2) ~= 0.70711 -- exactly the true magnitude
+    // bound every smallest-three survivor respects. With the OLD scale
+    // (4096), 0.70711 exceeded 2047/4096 = 0.4998 and clamped, causing a
+    // large angle error (the pre-S15b defect this contract fixed). With
+    // QUAT_SCALE = 2896.309 = 2048*sqrt(2), this component lands on the
+    // top of the int12 range (1-LSB edge clamp, benign by design).
     const cos45 = Math.cos(Math.PI / 4);
     const sin45 = Math.sin(Math.PI / 4);
     const original: [number, number, number, number] = [cos45, 0, sin45, 0];
@@ -119,8 +130,35 @@ describe('unpack_quaternion', () => {
     const result = unpack_quaternion(packed);
 
     const angle_err = quat_angle_deg(original, result);
-    // Clipping causes large error at this specific orientation
-    expect(angle_err).toBeLessThan(35);
+    // Same tight bound as the other accurate-decode cases below -- no
+    // clamp means no special-cased large-error allowance is needed anymore.
+    expect(angle_err).toBeLessThan(0.1);
+  });
+
+  it('S15b: old 4096 scale clamped a 1/sqrt(2) survivor by ~849 LSB; 2896.309 by at most 1 LSB', () => {
+    // Direct proof of the fix, independent of pack/unpack round-trip noise:
+    // compute the raw int12-scaled value each scale would produce for a
+    // component sitting exactly at the true magnitude bound. The old scale
+    // overshoots the signed 12-bit top by ~849 counts (~30 deg attitude
+    // error after clamping); the new scale overshoots by at most ~1 count,
+    // absorbed by the clamp as a quantization-step-sized edge error.
+    const component = 1 / Math.sqrt(2);   // ~0.70711, the true survivor bound
+
+    const old_scaled = component * OLD_DEFECTIVE_QUAT_SCALE;
+    const new_scaled = component * QUAT_SCALE;
+
+    expect(old_scaled).toBeGreaterThan(2047 + 800);  // old: clamps by ~849 LSB
+    expect(new_scaled).toBeGreaterThan(2047);        // new: rounds just past the top...
+    expect(new_scaled).toBeLessThanOrEqual(2048.5);  // ...by at most ~1 LSB
+
+    // And the full pack/unpack round-trip at that exact bound recovers the
+    // original quaternion to within the quantisation step, not a ~30deg
+    // clamp error.
+    const original: [number, number, number, number] = [component, component, 0, 0];
+    const packed = pack_quaternion(original);
+    const result = unpack_quaternion(packed);
+    const angle_err = quat_angle_deg(original, result);
+    expect(angle_err).toBeLessThan(0.1);
   });
 
   it('should decode moderate roll quaternion accurately', () => {
@@ -221,7 +259,7 @@ describe('unpack_quaternion', () => {
       const result = unpack_quaternion(packed);
       const angle_err = quat_angle_deg(q, result);
 
-      // With QUAT_SCALE = 4096, the step size is ~0.000244
+      // With QUAT_SCALE = 2896.309, the step size is ~0.000345
       // Worst-case angle error with 3 components is well under 0.1 degrees
       expect(angle_err).toBeLessThan(0.1);
     }

@@ -78,10 +78,39 @@ export interface LogicEdge {
   to: { node: string; port: string };
 }
 
+/**
+ * Program authority mode — carried in the compiled blob's `flags` byte,
+ * bits 1:0 (MC_FC_ALIGNMENT.md §13a / LOGIC_VM_SPEC.md "flags byte").
+ *
+ *   off    → 00 — interpreter idle (default, safe)
+ *   shadow → 01 — interpreter runs and logs decisions, never actuates
+ *   active → 10 — sole fire authority (post-flight; NACK'd by the FC this sprint)
+ *
+ * "invalid" (0b11) is not a selectable mode — it exists only as an FC-side
+ * rejection case and is never emitted by this compiler.
+ */
+export type LogicMode = 'off' | 'shadow' | 'active';
+
+/** Numeric flags-byte value (bits 1:0) for a given {@link LogicMode}. Unknown / absent → OFF (0x00). */
+export function logic_mode_flags(mode: LogicMode | undefined): number {
+  switch (mode) {
+    case 'shadow': return 0b01;
+    case 'active': return 0b10;
+    case 'off':
+    default: return 0b00;
+  }
+}
+
 /** The complete logic graph IR, as emitted by the renderer. */
 export interface LogicGraphIR {
   nodes: LogicNode[];
   edges: LogicEdge[];
+  /**
+   * Program authority mode (§13a). Optional for backward compatibility with
+   * Window-1 callers that don't set it — absent means `'off'`, matching the
+   * hard-coded `flags = 0x00` this compiler emitted before Window 2.
+   */
+  mode?: LogicMode;
 }
 
 // ---------------------------------------------------------------------------

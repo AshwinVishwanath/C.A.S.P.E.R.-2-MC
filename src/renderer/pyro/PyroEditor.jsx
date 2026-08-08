@@ -60,6 +60,64 @@ function Sep({ T }) {
 }
 
 // ---------------------------------------------------------------------------
+// LogicModeControl — Off / Shadow / Active segmented control
+// ---------------------------------------------------------------------------
+// docs/specs/MC_FC_ALIGNMENT.md §13a: the program authority mode is carried
+// inside the compiled blob's `flags` byte (bits 1:0), so it travels with —
+// and is covered by the hash of — whatever gets uploaded. Off/Shadow are
+// selectable this sprint; Active is greyed out ("post-flight" — the FC NACKs
+// it as BadState 0x02 until the active-authority sprint lands).
+//
+// Exported so SetupTab.jsx can render the identical control beside its own
+// "UPLOAD TO FC" button, driven by the same lifted `logicMode` state.
+export function LogicModeControl({ T, mode, onChange, compact }) {
+  const options = [
+    { id: 'off', label: 'OFF' },
+    { id: 'shadow', label: 'SHADOW' },
+    { id: 'active', label: 'ACTIVE', disabled: true, title: 'Active mode is post-flight only — FC rejects it (NACK BadState) this sprint' },
+  ];
+  return (
+    <div
+      title="Logic-VM program authority mode (docs/specs/MC_FC_ALIGNMENT.md §13a)"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'stretch',
+        border: '1px solid ' + T.border,
+        borderRadius: RADIUS.sm,
+        overflow: 'hidden',
+      }}
+    >
+      {options.map((opt) => {
+        const active = mode === opt.id;
+        return (
+          <button
+            key={opt.id}
+            disabled={opt.disabled}
+            title={opt.title}
+            onClick={() => !opt.disabled && onChange && onChange(opt.id)}
+            style={{
+              padding: compact ? '4px 7px' : '5px 9px',
+              border: 'none',
+              background: active ? (opt.id === 'shadow' ? T.warn : T.accent) : 'transparent',
+              color: opt.disabled ? T.faint : (active ? T.accentText : T.text),
+              fontFamily: FONT.mono,
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: 0.3,
+              cursor: opt.disabled ? 'not-allowed' : 'pointer',
+              opacity: opt.disabled ? 0.5 : 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // PyroEditor — default export
 // ---------------------------------------------------------------------------
 /**
@@ -70,9 +128,14 @@ function Sep({ T }) {
  *   onExport?: (json: string) => void,
  *   onImport?: (json: object) => void,
  *   height?: number,
+ *   logicMode?: 'off' | 'shadow' | 'active',
+ *   onLogicModeChange?: (mode: 'off' | 'shadow') => void,
  * }} props
  */
-function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExport, onImport, flightSim, height = 720 }) {
+function PyroEditor({
+  state: stateProp, dispatch: dispatchProp, onCompile, onExport, onImport, flightSim, height = 720,
+  logicMode: logicModeProp, onLogicModeChange,
+}) {
   const T = useTheme();
   const scheme = T.scheme || 'fusion';
   const sk = SCHEME_PROPS[scheme] || SCHEME_PROPS.fusion;
@@ -82,6 +145,13 @@ function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExp
   const [internalState, internalDispatch] = useReducer(pyroReducer, seed, initialState);
   const state    = stateProp    || internalState;
   const dispatch = dispatchProp || internalDispatch;
+
+  // Logic-VM authority mode — controlled by the parent (SetupTab) when
+  // logicMode/onLogicModeChange are supplied; otherwise uncontrolled,
+  // defaulting to 'off' (safe default, docs/specs/MC_FC_ALIGNMENT.md §13a).
+  const [internalLogicMode, setInternalLogicMode] = useState('off');
+  const logicMode = logicModeProp !== undefined ? logicModeProp : internalLogicMode;
+  const setLogicMode = onLogicModeChange || setInternalLogicMode;
 
   // UI state
   const [view, setView]                           = useState({ x: 0, y: 0, k: 1 });
@@ -328,7 +398,7 @@ function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExp
   // Compile / upload
   // -------------------------------------------------------------------------
   const handleCompile = () => {
-    const ir = toLogicGraphIR(state);
+    const ir = toLogicGraphIR(state, { mode: logicMode });
     if (onCompile) onCompile(ir);
     else if (window.casper?.upload_logic) window.casper.upload_logic(ir);
   };
@@ -488,6 +558,7 @@ function PyroEditor({ state: stateProp, dispatch: dispatchProp, onCompile, onExp
           {onCompile && (
             <>
               <Sep T={T} />
+              <LogicModeControl T={T} mode={logicMode} onChange={setLogicMode} compact />
               <ToolBtn T={T} onClick={handleCompile} title="Compile and upload to FC">
                 UPLOAD TO FC
               </ToolBtn>
