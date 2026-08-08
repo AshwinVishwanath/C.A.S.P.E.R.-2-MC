@@ -75,7 +75,14 @@ export enum EventType {
   Origin = 0x05,
   Burnout = 0x06,
   Staging = 0x07,
-  Arm = 0x08
+  Arm = 0x08,
+  /**
+   * PyroMode — boot-time pyro-mode visibility (docs/specs/MC_FC_ALIGNMENT.md §7).
+   * Emitted once from app_init() after cfg_manager_init() loads any stored config.
+   * event_data (u16): low byte = pyro_live_mask (bits 0-2 = channel 0-2 live);
+   * high byte bit0 = stored_config_valid.
+   */
+  PyroMode = 0x09
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +316,19 @@ export interface AckConfig {
   crc_ok: boolean;
 }
 
+/** ACK_LOGIC — Logic-VM program upload acknowledgement (msg_id 0xA4). Same 13-byte shape as ACK_CONFIG. */
+export interface AckLogic {
+  msg_id: number;
+  /** Echoed nonce from the CMD_LOGIC command. */
+  nonce: number;
+  /** Hash of the accepted logic program (= logic_blob trailing CRC-32). */
+  logic_hash: number;
+  /** Protocol version supported by the FC. */
+  protocol_version: number;
+  /** True if CRC verified OK. */
+  crc_ok: boolean;
+}
+
 /** Handshake response from FC (msg_id 0xC0). */
 export interface HandshakeResponse {
   msg_id: number;
@@ -337,6 +357,7 @@ export type ParsedMessage =
   | { type: 'ack_arm'; data: AckArm }
   | { type: 'ack_fire'; data: AckFire }
   | { type: 'ack_config'; data: AckConfig }
+  | { type: 'ack_logic'; data: AckLogic }
   | { type: 'nack'; data: Nack }
   | { type: 'confirm'; data: { nonce: number; crc_ok: boolean } }
   | { type: 'handshake'; data: HandshakeResponse }
@@ -397,6 +418,14 @@ export interface PyroChannelConfig {
   max_flight_angle_deg?: number;
   /** Additional delay before firing in seconds. */
   fire_delay_s?: number;
+  /**
+   * CHANNEL_LIVE — true if a live pyro charge is fitted to this channel.
+   * Serialised into per-channel flags bit 7 (docs/specs/MC_FC_ALIGNMENT.md §4/§5).
+   * Defaults to `false` (unset) — the safe, no-charge default: the FSM auto-fire
+   * path waives the continuity interlock on channels where this is false, but
+   * fires no real charge, so an unset LIVE bit can never surprise-fire hardware.
+   */
+  live?: boolean;
 }
 
 /** Complete flight configuration for FC upload. */

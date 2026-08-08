@@ -121,6 +121,57 @@ describe('serialise_config', () => {
     expect(different).toBe(true);
   });
 
+  // docs/specs/MC_FC_ALIGNMENT.md §4/§5/§10.8 — per-channel flags bit 7 is
+  // CHANNEL_LIVE. Default (unset `live`) must serialise to 0 (no-charge, safe).
+  describe('CHANNEL_LIVE (flags bit 7)', () => {
+    it('should leave bit 7 clear when `live` is unset (safe default)', () => {
+      const config = make_config(); // default_pyro has no `live` field
+      const result = serialise_config(config);
+      for (let ch = 0; ch < 4; ch++) {
+        const flags = result[3 + ch * 32 + 3];
+        expect(flags & 0x80).toBe(0);
+      }
+    });
+
+    it('should leave bit 7 clear when `live: false` is explicit', () => {
+      const config = make_config();
+      config.pyro_channels[1].live = false;
+      const result = serialise_config(config);
+      const flags = result[3 + 1 * 32 + 3];
+      expect(flags & 0x80).toBe(0);
+    });
+
+    it('should set bit 7 when `live: true`, independent of other flag bits', () => {
+      const config = make_config();
+      config.pyro_channels[2].live = true;
+      config.pyro_channels[2].early_deploy_enabled = true; // bit 0
+      config.pyro_channels[2].backup_mode = 'height';       // bit 1
+      const result = serialise_config(config);
+      const flags = result[3 + 2 * 32 + 3];
+      expect(flags & 0x80).toBe(0x80);
+      expect(flags & 0x01).toBe(0x01); // early_deploy untouched by the live bit
+      expect(flags & 0x02).toBe(0x02); // backup_mode untouched by the live bit
+    });
+
+    it('should set bit 7 independently per channel', () => {
+      const config = make_config();
+      config.pyro_channels[0].live = true;
+      config.pyro_channels[3].live = true;
+      const result = serialise_config(config);
+      expect(result[3 + 0 * 32 + 3] & 0x80).toBe(0x80);
+      expect(result[3 + 1 * 32 + 3] & 0x80).toBe(0);
+      expect(result[3 + 2 * 32 + 3] & 0x80).toBe(0);
+      expect(result[3 + 3 * 32 + 3] & 0x80).toBe(0x80);
+    });
+
+    it('should change config_hash when only a LIVE bit changes', () => {
+      const config_off = make_config();
+      const config_on = make_config();
+      config_on.pyro_channels[0].live = true;
+      expect(config_hash(config_off)).not.toBe(config_hash(config_on));
+    });
+  });
+
   it('should encode optional fields as zero when not set', () => {
     const config = make_config();
     // Clear all optional fields on channel 0

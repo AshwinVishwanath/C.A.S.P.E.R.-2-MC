@@ -23,7 +23,16 @@ import type { FcUsb } from '../transport/fc_usb';
 import type { GsUsb } from '../transport/gs_usb';
 import { scan_ports } from '../transport/port_scanner';
 import { serialise_config, config_hash } from '../protocol/config_serialiser';
-import { build_handshake, build_sim_flight, build_testmode } from '../protocol/command_builder';
+import {
+  build_handshake,
+  build_sim_flight,
+  build_testmode,
+  build_config_upload,
+  build_logic_upload,
+  generate_nonce
+} from '../protocol/command_builder';
+import { send_upload_with_ack } from '../protocol/upload_ack';
+import { LOGIC_BLOB_MAX } from '../protocol/constants';
 import type { FlightConfig } from '../protocol/types';
 import { run_readout, run_erase } from '../readout/readout_orchestrator';
 import { export_all_csv, export_hr_csv, export_lr_csv, export_summary_csv } from '../readout/csv_export';
@@ -313,9 +322,30 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
 
   ipcMain.handle(CH_UPLOAD_CONFIG, async (_event, config: FlightConfig) => {
     try {
-      const binary = serialise_config(config);
-      await fc.send(binary);
-      return { ok: true, hash: config_hash(config) };
+      // cfg_blob already carries its own trailing CRC-32 — that CRC IS
+      // config_hash() (docs/specs/MC_FC_ALIGNMENT.md §1/§10.8).
+      const cfg_blob = serialise_config(config);
+      const expected_hash = config_hash(config);
+      const nonce = generate_nonce();
+      const frame = build_config_upload(cfg_blob, nonce);
+
+      const result = await send_upload_with_ack(fc, frame, nonce, 'ack_config', expected_hash);
+
+      if (!result.ok) {
+        return { ok: false, error: result.error, nack_code: result.nack_code };
+      }
+
+      store.set_config_verified(!!result.verified);
+
+      if (!result.verified) {
+        return {
+          ok: true,
+          hash: result.hash,
+          verified: false,
+          error: 'ACK_CONFIG hash mismatch — FC reports a different config than uploaded'
+        };
+      }
+      return { ok: true, hash: result.hash, verified: true };
     } catch (err) {
       return {
         ok: false,
@@ -453,22 +483,46 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     if (!compile_result.ok) {
       return { ok: false, errors: compile_result.errors };
     }
-    const { bytes, hash, stats } = compile_result;
-    if (fc.is_connected()) {
-      try {
-        await fc.send(bytes);
-        return { ok: true, hash, stats, sent: true };
-      } catch (err) {
+    const { bytes: logic_blob, hash, stats } = compile_result;
+
+    if (logic_blob.length > LOGIC_BLOB_MAX) {
+      return {
+        ok: false,
+        errors: [`Compiled program is ${logic_blob.length} bytes, exceeds LOGIC_BLOB_MAX (${LOGIC_BLOB_MAX})`]
+      };
+    }
+
+    if (!fc.is_connected()) {
+      // FC not connected — compile-only path (offline preview), unchanged.
+      return { ok: true, hash, stats, sent: false };
+    }
+
+    try {
+      const nonce = generate_nonce();
+      const frame = build_logic_upload(logic_blob, nonce);
+      const result = await send_upload_with_ack(fc, frame, nonce, 'ack_logic', hash);
+
+      if (!result.ok) {
         return {
           ok: false,
-          errors: [
-            `Compile succeeded but FC send failed: ${err instanceof Error ? err.message : String(err)}`
-          ]
+          errors: [result.error ?? 'Logic upload failed'],
+          nack_code: result.nack_code,
+          stats,
+          sent: false
         };
       }
+
+      store.set_logic_verified(!!result.verified);
+
+      return { ok: true, hash: result.hash, stats, sent: true, verified: result.verified };
+    } catch (err) {
+      return {
+        ok: false,
+        errors: [
+          `Compile succeeded but FC send failed: ${err instanceof Error ? err.message : String(err)}`
+        ]
+      };
     }
-    // FC not connected — compile-only path
-    return { ok: true, hash, stats, sent: false };
   });
 
   /**

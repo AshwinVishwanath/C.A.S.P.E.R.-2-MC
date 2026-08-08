@@ -14,6 +14,17 @@ export const FLIGHT_CONFIG_DEFAULTS = {
   drogueAt:      "T+APOGEE",
   mainAtM:       300,
   vehicleId:     "CASPER-2 / 0x7F12",
+  // Per-channel pyro config for the wire FlightConfig upload (0xC1).
+  // `live` drives per-channel flags bit 7 (CHANNEL_LIVE) — see
+  // docs/specs/MC_FC_ALIGNMENT.md §4/§5/§10.8. Default UNCHECKED (false) on
+  // every channel: unset = no-charge = safe. A live channel is only ever
+  // asserted by explicit operator intent on the Setup tab.
+  pyroChannels: [
+    { role: "Apogee",        live: false },
+    { role: "Main",          live: false },
+    { role: "Apogee Backup", live: false },
+    { role: "Main Backup",   live: false },
+  ],
 };
 
 // Module-level store + subscriber set so every `useFlightConfig()` consumer
@@ -71,6 +82,72 @@ export function flightConfigHash(cfg) {
     h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
   }
   return "0x" + h.toString(16).toUpperCase().padStart(8, "0");
+}
+
+// ---------------------------------------------------------------------------
+// buildFlightConfig — Setup-UI state -> wire FlightConfig (protocol/types.ts)
+//
+// Maps this hook's local (MC-only) UI config into the real 4-channel
+// FlightConfig shape consumed by src/main/protocol/config_serialiser.ts's
+// serialise_config(). This is the "Setup-UI -> FlightConfig mapping"
+// required by docs/specs/MC_FC_ALIGNMENT.md §10.8. Every field the wire
+// format needs but the Setup UI doesn't (yet) expose gets a conservative,
+// documented default.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the 4-channel wire FlightConfig from the Setup UI's local config.
+ *
+ * @param {object} cfg - Local flight config from useFlightConfig() (or
+ *   FLIGHT_CONFIG_DEFAULTS). `cfg.pyroChannels[i]` supplies `role` and the
+ *   `live` flag (-> flags bit 7 / CHANNEL_LIVE) for hw_channel i.
+ * @returns {object} FlightConfig matching src/main/protocol/types.ts,
+ *   ready for `serialise_config()` / `config_hash()` / IPC `upload_config`.
+ */
+export function buildFlightConfig(cfg) {
+  const channels = (cfg && cfg.pyroChannels) || FLIGHT_CONFIG_DEFAULTS.pyroChannels;
+  const mainAtM = (cfg && cfg.mainAtM) ?? FLIGHT_CONFIG_DEFAULTS.mainAtM;
+
+  const pyro_channels = [0, 1, 2, 3].map((hw_channel) => {
+    const ch = channels[hw_channel] || { role: "Custom", live: false };
+    const isMain = typeof ch.role === "string" && ch.role.startsWith("Main");
+    return {
+      hw_channel,
+      role: ch.role || "Custom",
+      altitude_source: "ekf",
+      fire_duration_s: 1.0,
+      deploy_alt_m: isMain ? mainAtM : 0,
+      time_after_apogee_s: 0,
+      early_deploy_enabled: false,
+      early_deploy_vel_mps: 0,
+      backup_mode: "time",
+      backup_time_s: 1.0,
+      backup_height_m: 0,
+      motor_number: 0,
+      min_velocity_mps: 0,
+      min_altitude_m: 0,
+      max_ignition_angle_deg: 0,
+      max_flight_angle_deg: 0,
+      fire_delay_s: 0,
+      // CHANNEL_LIVE — default unchecked/false = no-charge = safe.
+      live: !!ch.live,
+    };
+  });
+
+  return {
+    pyro_channels,
+    pad_lat_deg: 0,
+    pad_lon_deg: 0,
+    pad_alt_msl_m: 0,
+    sf_fallback: {
+      alt_threshold_m: 100,
+      vel_threshold_mps: -5,
+    },
+    checks: {
+      min_batt_v: 7.4,
+      min_integrity_pct: 90,
+    },
+  };
 }
 
 // Format helpers shared by Flight tab and Setup tab editor.

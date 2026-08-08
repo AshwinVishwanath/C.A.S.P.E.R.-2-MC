@@ -18,6 +18,8 @@ import {
   MSG_ID_ABORT,
   MSG_ID_HANDSHAKE,
   MSG_ID_SIM_FLIGHT,
+  MSG_ID_CMD_CONFIG,
+  MSG_ID_CMD_LOGIC_UPLOAD,
   MAGIC_1,
   MAGIC_2,
   SIZE_CMD_ARM,
@@ -190,6 +192,78 @@ export function build_abort(nonce: number): Uint8Array {
   // CRC over bytes [0..4]
   const crc = crc32_compute(buf.subarray(0, 5));
   write_u32_le(buf, 5, crc);
+
+  return buf;
+}
+
+// ---------------------------------------------------------------------------
+// Config / Logic upload builders (docs/specs/MC_FC_ALIGNMENT.md §1/§2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a CMD_CONFIG upload frame (170 bytes for the current 163-byte blob).
+ *
+ * Layout:
+ *   [0]        msg_id (0xC1)
+ *   [1-2]      nonce (u16, LE)
+ *   [3..N+2]   cfg_blob (N bytes — the §15 config, including its own
+ *              trailing CRC-32; N is normally CFG_BLOB_SIZE = 163)
+ *   [N+3..N+6] outer CRC-32 (u32, LE) over bytes [0..N+2]
+ *
+ * Two independent CRCs travel in this frame: the blob's own trailing CRC-32
+ * (already baked into `cfg_blob` by `serialise_config()`) and this function's
+ * outer frame CRC. Both are validated independently by the FC.
+ *
+ * @param cfg_blob - The serialised config blob (see config_serialiser.ts),
+ *   already including its own trailing CRC-32.
+ * @param nonce - Unique 16-bit nonce for this transaction.
+ * @returns `cfg_blob.length + 7`-byte command frame.
+ */
+export function build_config_upload(cfg_blob: Uint8Array, nonce: number): Uint8Array {
+  const total = 1 + 2 + cfg_blob.length + 4;
+  const buf = new Uint8Array(total);
+
+  buf[0] = MSG_ID_CMD_CONFIG;
+  write_u16_le(buf, 1, nonce & 0xFFFF);
+  buf.set(cfg_blob, 3);
+
+  // Outer CRC over bytes [0 .. total-5] (msg_id + nonce + cfg_blob)
+  const crc = crc32_compute(buf.subarray(0, total - 4));
+  write_u32_le(buf, total - 4, crc);
+
+  return buf;
+}
+
+/**
+ * Build a CMD_LOGIC upload frame (N+7 bytes, N = logic_blob length).
+ *
+ * Layout:
+ *   [0]        msg_id (0xC5)
+ *   [1-2]      nonce (u16, LE)
+ *   [3..N+2]   logic_blob (N bytes — LOGIC_VM_SPEC blob, including its own
+ *              trailing CRC-32)
+ *   [N+3..N+6] outer CRC-32 (u32, LE) over bytes [0..N+2]
+ *
+ * As with CMD_CONFIG, two independent CRCs travel in this frame: the
+ * logic_blob's own trailing CRC-32 (already baked in by
+ * `compile_logic_graph()`) and this function's outer frame CRC.
+ *
+ * @param logic_blob - The compiled Logic-VM blob, already including its own
+ *   trailing CRC-32. Caller is responsible for enforcing LOGIC_BLOB_MAX.
+ * @param nonce - Unique 16-bit nonce for this transaction.
+ * @returns `logic_blob.length + 7`-byte command frame.
+ */
+export function build_logic_upload(logic_blob: Uint8Array, nonce: number): Uint8Array {
+  const total = 1 + 2 + logic_blob.length + 4;
+  const buf = new Uint8Array(total);
+
+  buf[0] = MSG_ID_CMD_LOGIC_UPLOAD;
+  write_u16_le(buf, 1, nonce & 0xFFFF);
+  buf.set(logic_blob, 3);
+
+  // Outer CRC over bytes [0 .. total-5] (msg_id + nonce + logic_blob)
+  const crc = crc32_compute(buf.subarray(0, total - 4));
+  write_u32_le(buf, total - 4, crc);
 
   return buf;
 }

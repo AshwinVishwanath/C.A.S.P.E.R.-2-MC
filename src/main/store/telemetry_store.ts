@@ -201,6 +201,12 @@ export class TelemetryStore {
     if (parsed.event_type === EventType.State) {
       this.snapshot.fsm_state = parsed.event_data as FsmState;
     }
+    if (parsed.event_type === EventType.PyroMode) {
+      // docs/specs/MC_FC_ALIGNMENT.md §7: low byte = pyro_live_mask,
+      // high byte bit0 = stored_config_valid.
+      this.snapshot.pyro_live_mask = parsed.event_data & 0xFF;
+      this.snapshot.stored_config_valid = ((parsed.event_data >> 8) & 0x01) !== 0;
+    }
     this._notify();
   }
 
@@ -332,6 +338,57 @@ export class TelemetryStore {
     this.snapshot.protocol_ok = ok;
     if (fw_version !== undefined) this.snapshot.fw_version = fw_version;
     if (config_hash !== undefined) this.snapshot.config_hash = config_hash;
+    this._notify();
+  }
+
+  /**
+   * Feed the config_hash slot from an ACK_CONFIG (0xA3) message.
+   *
+   * This slot previously existed but was never fed by anything (see
+   * docs/specs/MC_FC_ALIGNMENT.md §10.4). Verification (whether the hash
+   * matches the locally-computed one for the just-completed upload) is set
+   * separately via {@link set_config_verified} by the IPC upload handler,
+   * which alone knows the locally-computed hash for that transaction.
+   *
+   * @param hash - `config_hash` field from the parsed ACK_CONFIG message.
+   */
+  update_from_ack_config(hash: number): void {
+    this.snapshot.config_hash = hash;
+    this._notify();
+  }
+
+  /**
+   * Record whether the most recent config upload's ACK hash matched the
+   * MC-computed hash. Called by the CH_UPLOAD_CONFIG IPC handler.
+   *
+   * @param verified - True if ACK_CONFIG's config_hash equalled the
+   *   locally-computed `config_hash()` for the uploaded config.
+   */
+  set_config_verified(verified: boolean): void {
+    this.snapshot.config_hash_verified = verified;
+    this._notify();
+  }
+
+  /**
+   * Feed the logic_hash slot from an ACK_LOGIC (0xA4) message.
+   * Mirrors {@link update_from_ack_config} for the Logic-VM upload path.
+   *
+   * @param hash - `logic_hash` field from the parsed ACK_LOGIC message.
+   */
+  update_from_ack_logic(hash: number): void {
+    this.snapshot.logic_hash = hash;
+    this._notify();
+  }
+
+  /**
+   * Record whether the most recent logic upload's ACK hash matched the
+   * MC-computed (compiler) hash. Called by the CH_UPLOAD_LOGIC IPC handler.
+   *
+   * @param verified - True if ACK_LOGIC's logic_hash equalled the compiled
+   *   program's hash.
+   */
+  set_logic_verified(verified: boolean): void {
+    this.snapshot.logic_hash_verified = verified;
     this._notify();
   }
 
@@ -499,6 +556,10 @@ export class TelemetryStore {
         break;
       case EventType.Arm:
         type_name = `CH${(data >> 8) & 0xFF} ${(data & 0xFF) ? 'ARMED' : 'DISARMED'}`;
+        break;
+      case EventType.PyroMode:
+        type_name = `PYRO MODE: live_mask=0x${(data & 0xFF).toString(16).padStart(2, '0')} ` +
+          `stored_config=${((data >> 8) & 0x01) ? 'VALID' : 'DEFAULT'}`;
         break;
       default:
         type_name = `UNKNOWN EVENT 0x${type.toString(16)} data=${data}`;

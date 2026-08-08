@@ -71,6 +71,17 @@ export interface TelemetrySnapshot {
   config_hash: number | null;
   /** True if config_hash matches the MC-side config. */
   config_hash_verified: boolean;
+  /** FC-accepted Logic-VM program hash (logic_blob trailing CRC), or null if unknown. */
+  logic_hash: number | null;
+  /** True if logic_hash matches the MC-side compiled program hash. */
+  logic_hash_verified: boolean;
+  /**
+   * Live pyro-charge mask reported by FC_EVT_PYRO_MODE (bits 0-2 = channel 0-2
+   * live). Docs/specs/MC_FC_ALIGNMENT.md §7. 0 = all channels no-charge (safe default).
+   */
+  pyro_live_mask: number;
+  /** True if the FC loaded a valid stored config from flash at boot (FC_EVT_PYRO_MODE). */
+  stored_config_valid: boolean;
 
   // --- Telemetry (10 Hz) ---
   /** Altitude in metres AGL. */
@@ -219,6 +230,10 @@ export const DEFAULT_SNAPSHOT: TelemetrySnapshot = {
   fw_version: null,
   config_hash: null,
   config_hash_verified: false,
+  logic_hash: null,
+  logic_hash_verified: false,
+  pyro_live_mask: 0,
+  stored_config_valid: false,
 
   // Telemetry (10 Hz)
   alt_m: 0,

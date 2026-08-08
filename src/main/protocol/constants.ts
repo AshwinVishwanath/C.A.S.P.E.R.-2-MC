@@ -64,8 +64,24 @@ export const MSG_ID_ABORT = 0xF1;
 /** CMD_TESTMODE — toggle test mode (PAD state only). */
 export const MSG_ID_CMD_TESTMODE = 0x82;
 
-/** CMD_LOGIC — upload Logic VM program to FC. */
-export const MSG_ID_CMD_LOGIC = 0x83;
+/**
+ * CMD_CONFIG — flight configuration upload (MC -> FC).
+ *
+ * Redefined 2026-07-28 (docs/specs/MC_FC_ALIGNMENT.md §1): framed,
+ * nonce-bearing shape `[0xC1][nonce:2][cfg_blob:163][crc32:4] = 170`.
+ * USB-CDC-direct only — never routed via the LoRa/GS preference path.
+ */
+export const MSG_ID_CMD_CONFIG = 0xC1;
+
+/**
+ * CMD_LOGIC — upload a compiled Logic VM program to FC (MC -> FC).
+ *
+ * Added 2026-07-28 (docs/specs/MC_FC_ALIGNMENT.md §2). `0xC5` — NOT `0x83`,
+ * which collides with FC `MSG_ID_CMD_POLL` and has been removed from this
+ * enum. Frame: `[0xC5][nonce:2][logic_blob:N][crc32:4] = N+7`.
+ * USB-CDC-direct only — never routed via the LoRa/GS preference path.
+ */
+export const MSG_ID_CMD_LOGIC_UPLOAD = 0xC5;
 
 /** ACK_LOGIC — logic program upload acknowledgement from FC. */
 export const MSG_ID_ACK_LOGIC = 0xA4;
@@ -158,8 +174,33 @@ export const SIZE_ACK_FIRE = 13;
 /** ACK_CONFIG payload size. Total: 13 bytes. */
 export const SIZE_ACK_CONFIG = 13;
 
+/** ACK_LOGIC payload size. Total: 13 bytes (same shape as ACK_CONFIG). */
+export const SIZE_ACK_LOGIC = 13;
+
 /** NACK payload size. Total: 10 bytes. */
 export const SIZE_NACK = 10;
+
+/**
+ * CMD_CONFIG frame size. `[msg_id:1][nonce:2][cfg_blob:163][crc32:4] = 170`
+ * (docs/specs/MC_FC_ALIGNMENT.md §1). cfg_blob is the 163-byte §15 config,
+ * including its own trailing CRC-32.
+ */
+export const SIZE_CMD_CONFIG = 170;
+
+/** cfg_blob size embedded inside a CMD_CONFIG frame (matches config_serialiser output). */
+export const CFG_BLOB_SIZE = 163;
+
+/**
+ * Maximum logic_blob length accepted by the FC (docs/specs/MC_FC_ALIGNMENT.md §2).
+ * A CMD_LOGIC upload whose blob exceeds this is rejected with NACK CfgTooLarge (0x09).
+ */
+export const LOGIC_BLOB_MAX = 2048;
+
+/** Per-leg timeout while awaiting ACK_CONFIG/ACK_LOGIC/NACK for an upload. */
+export const UPLOAD_ACK_TIMEOUT_MS = 4000;
+
+/** Bounded retry count for config/logic uploads (docs/specs/MC_FC_ALIGNMENT.md §10.3). */
+export const UPLOAD_MAX_RETRIES = 2;
 
 // ---------------------------------------------------------------------------
 // Ring buffer (PRD Section 3.3)

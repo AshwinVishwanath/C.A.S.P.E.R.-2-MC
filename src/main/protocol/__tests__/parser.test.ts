@@ -18,6 +18,8 @@ import {
   MSG_ID_GS_TELEM,
   MSG_ID_GS_STATUS,
   MSG_ID_ACK_ARM,
+  MSG_ID_ACK_CONFIG,
+  MSG_ID_ACK_LOGIC,
   MSG_ID_NACK,
   MSG_ID_CONFIRM,
   SIZE_FC_MSG_FAST,
@@ -739,6 +741,103 @@ describe('parse GS_MSG_STATUS', () => {
     expect(result.ok).toBe(true);
     if (!result.ok || result.message.type !== 'gs_status') return;
     expect(result.message.data.ground_pressure_pa).toBe(101325);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ACK_CONFIG / ACK_LOGIC parser tests (13-byte layout, docs/specs/MC_FC_ALIGNMENT.md §3)
+// ---------------------------------------------------------------------------
+
+describe('parse ACK_CONFIG', () => {
+  it('should parse a valid ACK_CONFIG packet', () => {
+    const pkt = new Uint8Array(13);
+    pkt[0] = MSG_ID_ACK_CONFIG;
+    write_u16(pkt, 1, 0x4242);
+    write_u32(pkt, 3, 0xDEADBEEF);
+    pkt[7] = 5; // protocol_version
+    pkt[8] = 0; // reserved
+    append_crc(pkt);
+
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'ack_config') return;
+
+    expect(result.message.data.nonce).toBe(0x4242);
+    expect(result.message.data.config_hash).toBe(0xDEADBEEF);
+    expect(result.message.data.protocol_version).toBe(5);
+    expect(result.message.data.crc_ok).toBe(true);
+  });
+
+  it('should reject ACK_CONFIG shorter than 13 bytes', () => {
+    const short_pkt = new Uint8Array([MSG_ID_ACK_CONFIG, 0x00, 0x00]);
+    const result = parse_packet(short_pkt);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.msg_id).toBe(MSG_ID_ACK_CONFIG);
+    expect(result.error).toContain('too short');
+  });
+});
+
+describe('parse ACK_LOGIC', () => {
+  it('should parse a valid ACK_LOGIC packet (round-trip via parse_packet dispatch)', () => {
+    const pkt = new Uint8Array(13);
+    pkt[0] = MSG_ID_ACK_LOGIC;
+    write_u16(pkt, 1, 0xCAFE);
+    write_u32(pkt, 3, 0x12345678);
+    pkt[7] = 5; // protocol_version
+    pkt[8] = 0; // reserved
+    append_crc(pkt);
+
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'ack_logic') return;
+
+    expect(result.message.data.msg_id).toBe(MSG_ID_ACK_LOGIC);
+    expect(result.message.data.nonce).toBe(0xCAFE);
+    expect(result.message.data.logic_hash).toBe(0x12345678);
+    expect(result.message.data.protocol_version).toBe(5);
+    expect(result.message.data.crc_ok).toBe(true);
+  });
+
+  it('should dispatch msg_id 0xA4 to the ack_logic parser', () => {
+    expect(MSG_ID_ACK_LOGIC).toBe(0xA4);
+    const pkt = new Uint8Array(13);
+    pkt[0] = 0xA4;
+    write_u16(pkt, 1, 0x0001);
+    write_u32(pkt, 3, 0x00000000);
+    pkt[7] = 5;
+    pkt[8] = 0;
+    append_crc(pkt);
+
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.message.type).toBe('ack_logic');
+  });
+
+  it('should flag CRC mismatch without throwing', () => {
+    const pkt = new Uint8Array(13);
+    pkt[0] = MSG_ID_ACK_LOGIC;
+    write_u16(pkt, 1, 0x0001);
+    write_u32(pkt, 3, 0xAAAAAAAA);
+    pkt[7] = 5;
+    pkt[8] = 0;
+    append_crc(pkt);
+    pkt[12] ^= 0xFF; // corrupt one CRC byte
+
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'ack_logic') return;
+    expect(result.message.data.crc_ok).toBe(false);
+  });
+
+  it('should reject ACK_LOGIC shorter than 13 bytes', () => {
+    const short_pkt = new Uint8Array([MSG_ID_ACK_LOGIC, 0x00, 0x00]);
+    const result = parse_packet(short_pkt);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.msg_id).toBe(MSG_ID_ACK_LOGIC);
+    expect(result.error).toContain('too short');
   });
 });
 

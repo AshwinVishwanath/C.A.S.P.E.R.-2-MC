@@ -12,6 +12,8 @@ import {
   build_confirm,
   build_abort,
   build_testmode,
+  build_config_upload,
+  build_logic_upload,
   generate_nonce
 } from '../command_builder';
 import { crc32_compute } from '../crc32';
@@ -21,12 +23,16 @@ import {
   MSG_ID_CMD_TESTMODE,
   MSG_ID_CONFIRM,
   MSG_ID_ABORT,
+  MSG_ID_CMD_CONFIG,
+  MSG_ID_CMD_LOGIC_UPLOAD,
   MAGIC_1,
   MAGIC_2,
   SIZE_CMD_ARM,
   SIZE_CMD_FIRE,
   SIZE_CONFIRM,
-  SIZE_ABORT
+  SIZE_ABORT,
+  SIZE_CMD_CONFIG,
+  CFG_BLOB_SIZE
 } from '../constants';
 
 /** Helper: read u32 little-endian from Uint8Array. */
@@ -215,6 +221,119 @@ describe('build_testmode', () => {
   it('should have correct message ID (0x82)', () => {
     const pkt = build_testmode();
     expect(pkt[0]).toBe(MSG_ID_CMD_TESTMODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CMD_CONFIG / CMD_LOGIC upload framing
+// (docs/specs/MC_FC_ALIGNMENT.md §1/§2 — byte layouts recounted against the
+// contract, not eyeballed: see the [field:N]...=total comments below.)
+// ---------------------------------------------------------------------------
+
+/** Build a synthetic 163-byte cfg_blob with a valid trailing self-CRC, mirroring config_serialiser output. */
+function make_cfg_blob(): Uint8Array {
+  const blob = new Uint8Array(CFG_BLOB_SIZE);
+  for (let i = 0; i < CFG_BLOB_SIZE - 4; i++) blob[i] = (i * 7 + 3) & 0xFF;
+  const crc = crc32_compute(blob.subarray(0, CFG_BLOB_SIZE - 4));
+  blob[CFG_BLOB_SIZE - 4] = crc & 0xFF;
+  blob[CFG_BLOB_SIZE - 3] = (crc >>> 8) & 0xFF;
+  blob[CFG_BLOB_SIZE - 2] = (crc >>> 16) & 0xFF;
+  blob[CFG_BLOB_SIZE - 1] = (crc >>> 24) & 0xFF;
+  return blob;
+}
+
+describe('build_config_upload', () => {
+  // [msg_id:1][nonce:2][cfg_blob:163][crc32:4] = 1+2+163+4 = 170
+  it('should produce a 170-byte frame for the 163-byte config blob', () => {
+    const pkt = build_config_upload(make_cfg_blob(), 0x1234);
+    expect(pkt.length).toBe(SIZE_CMD_CONFIG);
+    expect(pkt.length).toBe(1 + 2 + CFG_BLOB_SIZE + 4);
+  });
+
+  it('should have correct message ID (0xC1)', () => {
+    const pkt = build_config_upload(make_cfg_blob(), 0x1234);
+    expect(pkt[0]).toBe(MSG_ID_CMD_CONFIG);
+    expect(pkt[0]).toBe(0xC1);
+  });
+
+  it('should encode nonce little-endian at offset 1', () => {
+    const pkt = build_config_upload(make_cfg_blob(), 0xABCD);
+    expect(read_u16_le(pkt, 1)).toBe(0xABCD);
+  });
+
+  it('should copy the cfg_blob verbatim at offset 3', () => {
+    const blob = make_cfg_blob();
+    const pkt = build_config_upload(blob, 0x0000);
+    for (let i = 0; i < blob.length; i++) {
+      expect(pkt[3 + i]).toBe(blob[i]);
+    }
+  });
+
+  it('should preserve the blob self-CRC at frame bytes [162..165]', () => {
+    const blob = make_cfg_blob();
+    const pkt = build_config_upload(blob, 0x0000);
+    // blob[159..162] (blob's own trailing CRC) lands at frame [3+159 .. 3+162] = [162..165]
+    expect(read_u32_le(pkt, 162)).toBe(read_u32_le(blob, 159));
+  });
+
+  it('should compute the outer CRC-32 over bytes [0..165], independent of the blob self-CRC', () => {
+    const pkt = build_config_upload(make_cfg_blob(), 0x5678);
+    const outer_crc = read_u32_le(pkt, 166);
+    const expected = crc32_compute(pkt.subarray(0, 166));
+    expect(outer_crc).toBe(expected);
+    // The two CRCs cover different (though overlapping) ranges and are
+    // computed independently — the outer CRC is not simply a copy of the
+    // blob's own trailing CRC.
+    expect(outer_crc).not.toBe(read_u32_le(pkt, 162));
+  });
+});
+
+describe('build_logic_upload', () => {
+  /** Build a synthetic N-byte logic blob (header content doesn't matter for framing tests). */
+  function make_logic_blob(n: number): Uint8Array {
+    const blob = new Uint8Array(n);
+    for (let i = 0; i < n - 4; i++) blob[i] = (i * 11 + 1) & 0xFF;
+    const crc = crc32_compute(blob.subarray(0, n - 4));
+    blob[n - 4] = crc & 0xFF;
+    blob[n - 3] = (crc >>> 8) & 0xFF;
+    blob[n - 2] = (crc >>> 16) & 0xFF;
+    blob[n - 1] = (crc >>> 24) & 0xFF;
+    return blob;
+  }
+
+  // [msg_id:1][nonce:2][logic_blob:N][crc32:4] = N+7
+  it('should produce an N+7 byte frame for an N-byte logic blob', () => {
+    for (const n of [16, 100, 2048]) {
+      const pkt = build_logic_upload(make_logic_blob(n), 0x1234);
+      expect(pkt.length).toBe(n + 7);
+    }
+  });
+
+  it('should have correct message ID (0xC5, not the colliding legacy 0x83)', () => {
+    const pkt = build_logic_upload(make_logic_blob(16), 0x1234);
+    expect(pkt[0]).toBe(MSG_ID_CMD_LOGIC_UPLOAD);
+    expect(pkt[0]).toBe(0xC5);
+  });
+
+  it('should encode nonce little-endian at offset 1', () => {
+    const pkt = build_logic_upload(make_logic_blob(16), 0xBEEF);
+    expect(read_u16_le(pkt, 1)).toBe(0xBEEF);
+  });
+
+  it('should copy the logic_blob verbatim at offset 3', () => {
+    const blob = make_logic_blob(40);
+    const pkt = build_logic_upload(blob, 0x0000);
+    for (let i = 0; i < blob.length; i++) {
+      expect(pkt[3 + i]).toBe(blob[i]);
+    }
+  });
+
+  it('should compute the outer CRC-32 over bytes [0..N+2]', () => {
+    const n = 40;
+    const pkt = build_logic_upload(make_logic_blob(n), 0x9999);
+    const outer_crc = read_u32_le(pkt, n + 3);
+    const expected = crc32_compute(pkt.subarray(0, n + 3));
+    expect(outer_crc).toBe(expected);
   });
 });
 

@@ -95,7 +95,8 @@ const PYRO_CHANNEL_SIZE = 32;
  *   [0]    hw_channel (u8)
  *   [1]    role (u8)
  *   [2]    altitude_source (u8)
- *   [3]    flags: early_deploy_enabled(bit0), backup_mode_height(bit1)
+ *   [3]    flags: early_deploy_enabled(bit0), backup_mode_height(bit1),
+ *          CHANNEL_LIVE(bit7) — 1=live charge fitted, 0=no-charge (safe default)
  *   [4-7]  fire_duration_s (f32, LE)
  *   [8-11] deploy_alt_m (f32, LE)
  *   [12-15] time_after_apogee_s (f32, LE)
@@ -117,10 +118,12 @@ function serialise_pyro_channel(
   buf[offset + 1] = PYRO_ROLE_MAP[config.role] ?? 0x06;
   buf[offset + 2] = ALT_SOURCE_MAP[config.altitude_source] ?? 0x00;
 
-  // Flags byte
+  // Flags byte. Bit 7 (CHANNEL_LIVE) defaults to 0 (no-charge, safe) unless
+  // the caller explicitly sets `live: true` — see docs/specs/MC_FC_ALIGNMENT.md §4/§10.8.
   let flags = 0;
   if (config.early_deploy_enabled) flags |= 0x01;
   if (config.backup_mode === 'height') flags |= 0x02;
+  if (config.live) flags |= 0x80;
   buf[offset + 3] = flags;
 
   let pos = offset + 4;

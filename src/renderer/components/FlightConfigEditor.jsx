@@ -6,7 +6,7 @@
 //   const [config, updateConfig, resetConfig] = useFlightConfig();
 //   <FlightConfigEditor config={config} onUpdate={updateConfig} onReset={resetConfig} />
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { useTheme } from "../design/ThemeContext";
 import { FONT, SPACE, RADIUS, TYPE } from "../design/tokens.js";
 import { Cap, Pill, Panel, Btn } from "../design/components";
@@ -15,7 +15,108 @@ import {
   flightConfigHash,
   formatMassKg,
   formatAltM,
+  buildFlightConfig,
 } from "../hooks/useFlightConfig.js";
+
+// ---------------------------------------------------------------------------
+// PyroChannelsField — 4-row per-channel role + LIVE checkbox editor.
+// Drives per-channel flags bit 7 (CHANNEL_LIVE) in the wire FlightConfig —
+// see docs/specs/MC_FC_ALIGNMENT.md §4/§5/§10.8. LIVE defaults unchecked.
+// ---------------------------------------------------------------------------
+function PyroChannelsField({ channels, onChange }) {
+  const T = useTheme();
+  const roleOptions = [
+    "Apogee", "Apogee Backup", "Main", "Main Backup",
+    "Ignition", "Ignition Backup", "Custom",
+  ];
+  const rows = channels && channels.length === 4
+    ? channels
+    : FLIGHT_CONFIG_DEFAULTS.pyroChannels;
+
+  function setRole(i, role) {
+    const next = rows.map((c, idx) => (idx === i ? { ...c, role } : c));
+    onChange(next);
+  }
+  function setLive(i, live) {
+    const next = rows.map((c, idx) => (idx === i ? { ...c, live } : c));
+    onChange(next);
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <Cap>Pyro Channels</Cap>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "auto 1fr auto",
+          alignItems: "center",
+          gap: `${SPACE.s2}px ${SPACE.s3}px`,
+        }}
+      >
+        {rows.map((ch, i) => (
+          <React.Fragment key={i}>
+            <span
+              style={{
+                fontFamily: FONT.mono,
+                fontSize: TYPE.cap,
+                color: T.muted,
+                minWidth: 18,
+              }}
+            >
+              CH{i}
+            </span>
+            <select
+              value={ch.role}
+              onChange={(e) => setRole(i, e.target.value)}
+              style={{
+                background: T.bgEl,
+                border: `1px solid ${T.border}`,
+                borderRadius: RADIUS.sm,
+                color: T.strong,
+                fontFamily: FONT.cond,
+                fontSize: TYPE.body,
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                padding: "6px 8px",
+                outline: "none",
+                cursor: "pointer",
+              }}
+            >
+              {roleOptions.map((o) => (
+                <option key={o} value={o} style={{ background: T.bgPanel, color: T.strong }}>
+                  {o}
+                </option>
+              ))}
+            </select>
+            <label
+              title="CHANNEL_LIVE — live pyro charge fitted. Unchecked = no-charge (safe default)."
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontFamily: FONT.mono,
+                fontSize: TYPE.cap,
+                fontWeight: 700,
+                color: ch.live ? T.danger : T.muted,
+                cursor: "pointer",
+                userSelect: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!ch.live}
+                onChange={(e) => setLive(i, e.target.checked)}
+                style={{ accentColor: T.danger, cursor: "pointer" }}
+              />
+              LIVE
+            </label>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // ConfigField — single labelled input (text / number / select)
@@ -117,6 +218,63 @@ export default function FlightConfigEditor({
   const T = useTheme();
   const [confirmReset, setConfirmReset] = useState(false);
 
+  // Upload-to-FC state: null | 'pending' | 'verified' | 'mismatch' | 'timeout' | 'nack' | 'err'
+  const [uploadStatus, setUploadStatus] = useState(null);
+  const [uploadDetail, setUploadDetail] = useState("");
+
+  const handleUploadToFc = useCallback(async () => {
+    const api = typeof window !== "undefined" ? window.casper : null;
+    if (!api || typeof api.upload_config !== "function") {
+      setUploadStatus("err");
+      setUploadDetail("Bridge missing: window.casper.upload_config not available");
+      return;
+    }
+    setUploadStatus("pending");
+    setUploadDetail("Uploading…");
+    try {
+      const wireConfig = buildFlightConfig(config);
+      const res = await api.upload_config(wireConfig);
+      if (res && res.ok && res.verified) {
+        const hashHex = (res.hash >>> 0).toString(16).toUpperCase().padStart(8, "0");
+        setUploadStatus("verified");
+        setUploadDetail(`Verified · FC hash 0x${hashHex}`);
+      } else if (res && res.ok && res.verified === false) {
+        setUploadStatus("mismatch");
+        setUploadDetail(res.error || "ACK hash did not match the uploaded config");
+      } else if (res && res.nack_code !== undefined) {
+        setUploadStatus("nack");
+        setUploadDetail(res.error || `NACK 0x${(res.nack_code >>> 0).toString(16)}`);
+      } else if (res && /timeout/i.test(res.error || "")) {
+        setUploadStatus("timeout");
+        setUploadDetail(res.error);
+      } else {
+        setUploadStatus("err");
+        setUploadDetail((res && res.error) || "Upload failed");
+      }
+    } catch (e) {
+      setUploadStatus("err");
+      setUploadDetail(String((e && e.message) || e));
+    }
+  }, [config]);
+
+  const uploadStatusColor =
+    uploadStatus === "verified" ? T.accent
+    : uploadStatus === "mismatch" ? T.warn
+    : uploadStatus === "timeout" ? T.warn
+    : uploadStatus === "nack" ? T.danger
+    : uploadStatus === "err" ? T.danger
+    : uploadStatus === "pending" ? T.warn
+    : T.muted;
+
+  const uploadStatusLabel =
+    uploadStatus === "verified" ? "VERIFIED"
+    : uploadStatus === "mismatch" ? "HASH MISMATCH"
+    : uploadStatus === "timeout" ? "TIMEOUT"
+    : uploadStatus === "nack" ? "NACK"
+    : uploadStatus === "err" ? "ERROR"
+    : uploadStatus === "pending" ? "UPLOADING…"
+    : null;
+
   const profileOptions = [
     "L1 single-stage",
     "L2 single-stage",
@@ -152,6 +310,26 @@ export default function FlightConfigEditor({
       right={
         <div style={{ display: "flex", gap: SPACE.s2, alignItems: "center" }}>
           <Pill color={T.muted} size="sm">{hash}</Pill>
+          {uploadStatusLabel && (
+            <div
+              title={uploadDetail}
+              style={{
+                fontFamily: FONT.mono,
+                fontSize: 10,
+                color: uploadStatusColor,
+                padding: "6px 10px",
+                border: `1px solid ${uploadStatusColor}55`,
+                background: `${uploadStatusColor}10`,
+                borderRadius: RADIUS.sm,
+                maxWidth: 320,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {uploadStatusLabel}{uploadDetail ? ` · ${uploadDetail}` : ""}
+            </div>
+          )}
           <Btn
             kind={confirmReset ? "warn" : "ghost"}
             size="xs"
@@ -159,18 +337,22 @@ export default function FlightConfigEditor({
           >
             {confirmReset ? "CONFIRM RESET" : "RESET"}
           </Btn>
-          {/* TODO: wire to IPC — window.casper.upload_flight_config */}
-          <Btn kind="primary" size="sm">
-            UPLOAD TO FC
+          <Btn
+            kind="primary"
+            size="sm"
+            disabled={uploadStatus === "pending"}
+            onClick={handleUploadToFc}
+          >
+            {uploadStatus === "pending" ? "UPLOADING…" : "UPLOAD TO FC"}
           </Btn>
         </div>
       }
     >
-      {/* Two-column: VEHICLE | TARGETS */}
+      {/* Three-column: VEHICLE | TARGETS | PYRO CHANNELS */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "1fr 1fr 1.2fr",
           gap: SPACE.s4,
           alignItems: "start",
         }}
@@ -234,6 +416,19 @@ export default function FlightConfigEditor({
             onChange={(v) => onUpdate({ mainAtM: v })}
             hint="Below this altitude main charge fires"
           />
+        </div>
+
+        {/* PYRO CHANNELS column — feeds the wire FlightConfig (0xC1) upload */}
+        <div style={{ display: "flex", flexDirection: "column", gap: SPACE.s3 }}>
+          <Cap color={T.accent}>PYRO CHANNELS</Cap>
+          <PyroChannelsField
+            channels={config.pyroChannels || FLIGHT_CONFIG_DEFAULTS.pyroChannels}
+            onChange={(pyroChannels) => onUpdate({ pyroChannels })}
+          />
+          <span style={{ fontFamily: FONT.mono, fontSize: TYPE.cap, color: T.faint }}>
+            LIVE = real pyro charge fitted. Unchecked channels arm and auto-fire
+            without continuity (no-charge, safe default).
+          </span>
         </div>
       </div>
 

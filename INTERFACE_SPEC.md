@@ -156,6 +156,9 @@ Every decoded COBS payload has `msg_id` at byte `[0]`. The parser dispatches by 
 | 160 | `0xA0` | FC → MC | ACK_ARM | 12 bytes |
 | 161 | `0xA1` | FC → MC | ACK_FIRE | 13 bytes |
 | 163 | `0xA3` | FC → MC | ACK_CONFIG | 13 bytes |
+| 164 | `0xA4` | FC → MC | ACK_LOGIC | 13 bytes |
+| 193 | `0xC1` | MC → FC | CMD_CONFIG | 170 bytes (USB-CDC only) |
+| 197 | `0xC5` | MC → FC | CMD_LOGIC | N+7 bytes (USB-CDC only) |
 | 192 | `0xC0` | Bidirectional | HANDSHAKE | 1 (req) / variable (resp) |
 | 208 | `0xD0` | MC → FC | SIM_FLIGHT | 5 bytes |
 | 224 | `0xE0` | FC → MC | NACK | 10 bytes |
@@ -422,6 +425,44 @@ All safety-critical commands use the CAC (Command-Acknowledge-Confirm) protocol 
 | 3–4 | nonce | u16 LE | Transaction nonce |
 | 5–8 | crc32 | u32 LE | CRC-32 over [0–4] |
 
+### 7.5 CMD_CONFIG (0xC1) — flight config upload
+
+*Added 2026-07-28 (see `docs/specs/MC_FC_ALIGNMENT.md`). USB-CDC-direct only — must
+NOT be routed via the LoRa preference path (radio frames cap at 32 bytes).*
+
+**Size:** 170 bytes
+**CRC coverage:** outer CRC over bytes [0–165], CRC at [166–169]
+
+| Offset | Field | Type | Description |
+|---|---|---|---|
+| 0 | msg_id | u8 | `0xC1` |
+| 1–2 | nonce | u16 LE | Transaction ID |
+| 3–165 | cfg_blob | 163 bytes | §15 config blob, **including its own trailing CRC-32** at blob bytes [159–162] (frame [162–165]) |
+| 166–169 | crc32 | u32 LE | Outer CRC-32 over [0–165] |
+
+Both the outer CRC and the blob's self-CRC must validate. FC replies ACK_CONFIG (§8.4)
+after flash persist + readback verify, else NACK (CrcFail 0x01 / CfgTooLarge 0x09 /
+FlashFail 0x0A).
+
+### 7.6 CMD_LOGIC (0xC5) — Logic-VM program upload
+
+*Added 2026-07-28. USB-CDC-direct only. Replaces the former MC `MSG_ID_CMD_LOGIC =
+0x83`, which collided with FC `CMD_POLL` (0x83) and is removed. FC-side interpreter is
+out of scope this sprint: the FC accepts, validates, persists, and ACKs but does not
+execute the program.*
+
+**Size:** N+7 bytes (N = logic blob `total_length`, N ≤ 2048)
+**CRC coverage:** outer CRC over bytes [0 .. N+2], CRC at [N+3 .. N+6]
+
+| Offset | Field | Type | Description |
+|---|---|---|---|
+| 0 | msg_id | u8 | `0xC5` |
+| 1–2 | nonce | u16 LE | Transaction ID |
+| 3 .. N+2 | logic_blob | N bytes | LOGIC_VM_SPEC blob (12-byte header + ops + own trailing CRC-32) |
+| N+3 .. N+6 | crc32 | u32 LE | Outer CRC-32 over [0 .. N+2] |
+
+FC replies ACK_LOGIC (§8.5) after flash persist + readback verify, else NACK.
+
 ---
 
 ## 8. Response Messages (FC → MC)
@@ -488,6 +529,10 @@ All safety-critical commands use the CAC (Command-Acknowledge-Confirm) protocol 
 
 ### 8.4 ACK_CONFIG (0xA3)
 
+*This 13-byte, nonce-bearing layout is the **BINDING** ACK_CONFIG format (confirmed
+2026-07-28). Any legacy 10-byte nonce-less variant is removed; the FC config-upload
+path emits exactly this.*
+
 **Size:** 13 bytes
 **CRC coverage:** bytes [0–8], CRC at [9–12]
 
@@ -495,7 +540,24 @@ All safety-critical commands use the CAC (Command-Acknowledge-Confirm) protocol 
 |---|---|---|---|
 | 0 | msg_id | u8 | `0xA3` |
 | 1–2 | nonce | u16 LE | Echoed from config upload |
-| 3–6 | config_hash | u32 LE | CRC-32 of accepted config |
+| 3–6 | config_hash | u32 LE | CRC-32 of accepted config (= cfg_blob trailing CRC) |
+| 7 | protocol_version | u8 | FC protocol version |
+| 8 | reserved | u8 | — |
+| 9–12 | crc32 | u32 LE | CRC-32 over [0–8] |
+
+### 8.5 ACK_LOGIC (0xA4)
+
+*Added 2026-07-28. Same 13-byte shape as ACK_CONFIG; `hash` is the Logic-VM blob's
+trailing CRC-32.*
+
+**Size:** 13 bytes
+**CRC coverage:** bytes [0–8], CRC at [9–12]
+
+| Offset | Field | Type | Description |
+|---|---|---|---|
+| 0 | msg_id | u8 | `0xA4` |
+| 1–2 | nonce | u16 LE | Echoed from logic upload |
+| 3–6 | logic_hash | u32 LE | CRC-32 of accepted program (= logic_blob trailing CRC) |
 | 7 | protocol_version | u8 | FC protocol version |
 | 8 | reserved | u8 | — |
 | 9–12 | crc32 | u32 LE | CRC-32 over [0–8] |
@@ -896,7 +958,7 @@ Subscribes to `window.casper.on_serial_ports()` and `on_telemetry()` (for connec
 | +0 | hw_channel | u8 | 0–3 |
 | +1 | role | u8 | PyroRole enum (0–6) |
 | +2 | altitude_source | u8 | 0=EKF, 1=baro |
-| +3 | flags | u8 | bit 0: early_deploy, bit 1: backup_height |
+| +3 | flags | u8 | bit 0: early_deploy, bit 1: backup_height, **bit 7: CHANNEL_LIVE** (1 = live pyro charge fitted; 0 = no-charge, safe default — see `docs/specs/MC_FC_ALIGNMENT.md` §4/§5, added 2026-07-28); bits 2–6 reserved |
 | +4–7 | fire_duration_s | f32 LE | seconds |
 | +8–11 | deploy_alt_m | f32 LE | metres AGL |
 | +12–15 | time_after_apogee_s | f32 LE | seconds |

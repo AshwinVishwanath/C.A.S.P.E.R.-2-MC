@@ -237,8 +237,11 @@ export default function SetupTab({ serial, flightSim }) {
     initialState(buildSeedGraph()),
   );
 
-  // Upload-to-FC state
-  const [uploadStatus, setUploadStatus] = useState(null); // null | 'pending' | 'ok' | 'err'
+  // Upload-to-FC state.
+  // null | 'pending' | 'verified' | 'mismatch' | 'timeout' | 'nack' | 'compiled' | 'err'
+  // 'verified' = ACK_LOGIC hash matched (docs/specs/MC_FC_ALIGNMENT.md §10.7);
+  // 'compiled' = offline compile-only success (FC not connected — no ACK to verify).
+  const [uploadStatus, setUploadStatus] = useState(null);
   const [uploadDetail, setUploadDetail] = useState('');
 
   const handleUpload = useCallback(async () => {
@@ -253,17 +256,34 @@ export default function SetupTab({ serial, flightSim }) {
     setUploadDetail('Compiling…');
     try {
       const res = await api.upload_logic(ir);
-      if (res && res.ok) {
-        const hashHex = (res.hash >>> 0).toString(16).toUpperCase().padStart(8, '0');
-        const stats = res.stats || {};
-        const sent = res.sent !== false; // undefined or true => sent
-        setUploadStatus('ok');
+      const stats = (res && res.stats) || {};
+      const hashHex = res && res.hash !== undefined
+        ? (res.hash >>> 0).toString(16).toUpperCase().padStart(8, '0')
+        : '????????';
+
+      if (res && res.ok && res.sent && res.verified) {
+        // Uploaded and the FC's ACK_LOGIC hash matched — durably stored & verified.
+        setUploadStatus('verified');
         setUploadDetail(
-          (sent ? 'Uploaded · ' : 'Compiled (no FC) · ')
-            + `${stats.total_bytes ?? '?'} B · `
-            + `${stats.op_count ?? '?'} ops · `
-            + `hash 0x${hashHex}`,
+          `Verified · ${stats.total_bytes ?? '?'} B · ${stats.op_count ?? '?'} ops · hash 0x${hashHex}`,
         );
+      } else if (res && res.ok && res.sent && res.verified === false) {
+        // FC ACKed but echoed a different hash than what was sent — do not trust it.
+        setUploadStatus('mismatch');
+        setUploadDetail(`ACK_LOGIC hash mismatch (sent 0x${hashHex}) — do not trust FC state`);
+      } else if (res && res.ok && res.sent === false) {
+        // Compile-only path — FC not connected, nothing was sent or verified.
+        setUploadStatus('compiled');
+        setUploadDetail(
+          `Compiled (no FC) · ${stats.total_bytes ?? '?'} B · ${stats.op_count ?? '?'} ops · hash 0x${hashHex}`,
+        );
+      } else if (res && res.nack_code !== undefined) {
+        setUploadStatus('nack');
+        const errs = res.errors || [];
+        setUploadDetail(errs.slice(0, 2).join(' · ') || `NACK 0x${(res.nack_code >>> 0).toString(16)}`);
+      } else if (res && (res.errors || []).some((e) => /timeout/i.test(e))) {
+        setUploadStatus('timeout');
+        setUploadDetail((res.errors || []).slice(0, 2).join(' · '));
       } else {
         const errs = (res && res.errors) || ['unknown error'];
         setUploadStatus('err');
@@ -302,7 +322,7 @@ export default function SetupTab({ serial, flightSim }) {
         const edges = data.edges || [];
         const groups = data.groups || [];
         dispatch({ type: 'LOAD', payload: { nodes, edges, groups } });
-        setUploadStatus('ok');
+        setUploadStatus('imported');
         setUploadDetail(`Imported ${nodes.length} nodes, ${edges.length} edges`);
       } catch (e) {
         setUploadStatus('err');
@@ -313,7 +333,12 @@ export default function SetupTab({ serial, flightSim }) {
   );
 
   const statusColor =
-    uploadStatus === 'ok' ? T.accent
+    uploadStatus === 'verified' ? T.accent
+    : uploadStatus === 'imported' ? T.accent
+    : uploadStatus === 'compiled' ? T.muted
+    : uploadStatus === 'mismatch' ? T.warn
+    : uploadStatus === 'timeout' ? T.warn
+    : uploadStatus === 'nack' ? T.danger
     : uploadStatus === 'err' ? T.danger
     : uploadStatus === 'pending' ? T.warn
     : T.muted;

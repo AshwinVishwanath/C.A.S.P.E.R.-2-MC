@@ -21,6 +21,7 @@ import {
   AckArm,
   AckFire,
   AckConfig,
+  AckLogic,
   Nack,
   NackError,
   HandshakeResponse
@@ -37,6 +38,7 @@ import {
   MSG_ID_ACK_ARM,
   MSG_ID_ACK_FIRE,
   MSG_ID_ACK_CONFIG,
+  MSG_ID_ACK_LOGIC,
   MSG_ID_NACK,
   MSG_ID_CONFIRM,
   MSG_ID_HANDSHAKE,
@@ -48,6 +50,7 @@ import {
   SIZE_ACK_ARM,
   SIZE_ACK_FIRE,
   SIZE_ACK_CONFIG,
+  SIZE_ACK_LOGIC,
   SIZE_NACK,
   SIZE_CONFIRM,
   ALT_SCALE,
@@ -196,6 +199,9 @@ export function parse_packet(
 
     case MSG_ID_ACK_CONFIG:
       return parse_ack_config(payload);
+
+    case MSG_ID_ACK_LOGIC:
+      return parse_ack_logic(payload);
 
     case MSG_ID_NACK:
       return parse_nack(payload);
@@ -638,6 +644,43 @@ function parse_ack_config(payload: Uint8Array): ParseResult {
   };
 
   return { ok: true, message: { type: 'ack_config', data } };
+}
+
+// ---------------------------------------------------------------------------
+// ACK_LOGIC parser (msg_id 0xA4, 13 bytes — same shape as ACK_CONFIG)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse ACK_LOGIC packet.
+ *
+ * Layout (13 bytes total, docs/specs/MC_FC_ALIGNMENT.md §3):
+ *   [0]    msg_id (0xA4)
+ *   [1-2]  nonce (u16, LE)
+ *   [3-6]  logic_hash (u32, LE) — logic_blob trailing CRC-32
+ *   [7]    protocol_version (u8)
+ *   [8]    reserved
+ *   [9-12] CRC-32 (u32, LE)
+ */
+function parse_ack_logic(payload: Uint8Array): ParseResult {
+  if (payload.length < SIZE_ACK_LOGIC) {
+    return {
+      ok: false,
+      error: `ACK_LOGIC too short: ${payload.length} < ${SIZE_ACK_LOGIC}`,
+      msg_id: MSG_ID_ACK_LOGIC
+    };
+  }
+
+  const crc_ok = verify_packet_crc(payload);
+
+  const data: AckLogic = {
+    msg_id: MSG_ID_ACK_LOGIC,
+    nonce: read_u16_le(payload, 1),
+    logic_hash: read_u32_le(payload, 3),
+    protocol_version: payload[7],
+    crc_ok
+  };
+
+  return { ok: true, message: { type: 'ack_logic', data } };
 }
 
 // ---------------------------------------------------------------------------
