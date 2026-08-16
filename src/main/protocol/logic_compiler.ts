@@ -442,6 +442,20 @@ export function compile_logic_graph(graph: LogicGraphIR): CompileResult {
         const src = src_map[src_str];
         if (src === undefined) {
           errors.push(`Node "${id}": unknown altitude source "${src_str}"`);
+        } else if (src === SignalSource.ALTITUDE_GPS) {
+          // The FC cannot supply GPS altitude: logic_vm.c's read_signal() has
+          // no GPS field at the pinned (nc_output_t, fsm_state_t,
+          // pyro_state_t) tick signature. Emitting it would produce a gate
+          // that is PERMANENTLY false in flight, which at post-flight
+          // analysis is indistinguishable from "the VM correctly declined to
+          // fire" -- it reads as a shadow-vs-heritage divergence rather than
+          // the wiring gap it is. The FC rejects such a blob outright
+          // (parse_blob(), FC_EVT_ERROR/LOGIC_VM_ERR_MALFORMED); failing here
+          // instead surfaces it at authoring time rather than after upload.
+          errors.push(
+            `Node "${id}": altitude source "gps" is not supported by the flight computer ` +
+            `(no GPS signal at the Logic-VM seam). Use "ekf" or "baro".`
+          );
         }
         // LOAD_INPUT: opcode(1) + out(2) + source(1) = 4 bytes
         ops.u8(OpCode.LOAD_INPUT);
@@ -505,6 +519,14 @@ export function compile_logic_graph(graph: LogicGraphIR): CompileResult {
         break;
       }
       case 'motor_num':
+        // Same reasoning as the "gps" altitude source above: flight_fsm.c's
+        // stage_count has no public getter, so logic_vm.c's read_signal()
+        // cannot supply MOTOR_NUM and the FC rejects any blob that loads it.
+        // Fail at authoring time rather than shipping a permanently-false gate.
+        errors.push(
+          `Node "${id}": "motor_num" is not supported by the flight computer ` +
+          `(no motor-number signal at the Logic-VM seam).`
+        );
         ops.u8(OpCode.LOAD_INPUT); ops.u16(out_slot); ops.u8(SignalSource.MOTOR_NUM);
         op_count++;
         break;

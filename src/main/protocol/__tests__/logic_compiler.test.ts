@@ -474,3 +474,69 @@ describe('compile_logic_graph — hash covers mode (off vs shadow diverge)', () 
     expect(implicit.hash).toBe(explicit.hash);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Signal sources the flight computer cannot supply
+//
+// logic_vm.c's read_signal() has no GPS field and no motor-number getter at
+// the pinned (nc_output_t, fsm_state_t, pyro_state_t) tick signature. Before
+// 2026-08-16 both compiled fine here and evaluated to a silent 0.0f on the FC,
+// so a gate built on either was PERMANENTLY false in flight -- and at
+// post-flight analysis that is indistinguishable from "the VM correctly
+// declined to fire", i.e. it reads as a shadow-vs-heritage divergence rather
+// than the wiring gap it is. The FC now rejects such a blob outright
+// (parse_blob() -> FC_EVT_ERROR/LOGIC_VM_ERR_MALFORMED); these tests pin the
+// authoring-time half, so the graph never gets built in the first place.
+// ---------------------------------------------------------------------------
+
+describe('compile_logic_graph — signal sources the FC cannot supply', () => {
+  const with_input = (kind: string, params: Record<string, unknown>): LogicGraphIR => ({
+    nodes: [
+      { id: 'n_src',  kind, params },
+      { id: 'n_pyro', kind: 'pyro_1', params: { duration: 1000, role: 'Apogee' } },
+    ],
+    edges: [
+      { id: 'e1', from: { node: 'n_src', port: 'out' }, to: { node: 'n_pyro', port: 'a' } },
+    ],
+  });
+
+  // Positive control: the identical shape with a SUPPORTED source must compile,
+  // so the two rejections below are attributable to the source and not to a
+  // malformed fixture.
+  it('accepts the same graph shape with altitude source "ekf"', () => {
+    const result = compile_logic_graph(with_input('altitude', { source: 'ekf' }));
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts altitude source "baro"', () => {
+    const result = compile_logic_graph(with_input('altitude', { source: 'baro' }));
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects altitude source "gps"', () => {
+    const result = compile_logic_graph(with_input('altitude', { source: 'gps' }));
+    expect(result.ok).toBe(false);
+  });
+
+  it('names gps and points at the supported alternatives', () => {
+    const result = compile_logic_graph(with_input('altitude', { source: 'gps' }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const msg = result.errors.join(' ');
+    expect(msg).toContain('gps');
+    expect(msg).toMatch(/ekf/i);
+    expect(msg).toMatch(/baro/i);
+  });
+
+  it('rejects a motor_num node', () => {
+    const result = compile_logic_graph(with_input('motor_num', {}));
+    expect(result.ok).toBe(false);
+  });
+
+  it('names motor_num in the error', () => {
+    const result = compile_logic_graph(with_input('motor_num', {}));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.join(' ')).toContain('motor_num');
+  });
+});
