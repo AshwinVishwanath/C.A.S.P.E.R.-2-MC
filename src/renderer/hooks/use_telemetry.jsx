@@ -35,6 +35,8 @@ function makeDefaultState() {
     gpsLon: 0,
     gpsFix: 'NONE',
     gpsSats: 0,
+    gpsAltMsl: 0,
+    gpsPdop: 0,
     ekfAlt: 0,
     alt: 0,
     vel: 0,
@@ -56,6 +58,7 @@ function makeDefaultState() {
     pktRx: 0,
     pktLost: 0,
     recovered: 0,
+    gs: {},   // no GS_MSG_STATUS yet -- panel renders "--" for every cell
     pyro: [
       { hwCh: 1, role: DEFAULT_ROLES[0], cont: false, contV: 0, armed: false, firing: false },
       { hwCh: 2, role: DEFAULT_ROLES[1], cont: false, contV: 0, armed: false, firing: false },
@@ -63,15 +66,6 @@ function makeDefaultState() {
       { hwCh: 4, role: DEFAULT_ROLES[3], cont: false, contV: 0, armed: false, firing: false },
     ],
   };
-}
-
-/**
- * Convert a GPS delta-metres offset to a decimal-degree coordinate.
- * Uses a simple flat-earth approximation: 1 degree latitude ~ 111320 m.
- * Pad origin is treated as (0, 0) since the FC reports deltas only.
- */
-function deltaToCoord(delta_m) {
-  return delta_m / 111320;
 }
 
 /**
@@ -105,10 +99,12 @@ function mapSnapshot(snap, roles) {
     rssi: snap.rssi_dbm != null ? snap.rssi_dbm : 0,
     dataAge: snap.data_age_ms != null ? snap.data_age_ms : 0,
     batt: snap.batt_v != null ? snap.batt_v : 0,
-    gpsLat: deltaToCoord(snap.gps_dlat_m || 0),
-    gpsLon: deltaToCoord(snap.gps_dlon_m || 0),
+    gpsLat: snap.gps_lat_deg != null ? snap.gps_lat_deg : 0,
+    gpsLon: snap.gps_lon_deg != null ? snap.gps_lon_deg : 0,
     gpsFix: gpsFix,
     gpsSats: snap.gps_sats != null ? snap.gps_sats : 0,
+    gpsAltMsl: snap.gps_alt_msl_m != null ? snap.gps_alt_msl_m : 0,
+    gpsPdop: snap.gps_pdop != null ? snap.gps_pdop : 0,
     ekfAlt: snap.alt_m != null ? snap.alt_m : 0,
     alt: snap.alt_m != null ? snap.alt_m : 0,
     vel: snap.vel_mps != null ? snap.vel_mps : 0,
@@ -130,6 +126,21 @@ function mapSnapshot(snap, roles) {
     pktRx:     snap.pkt_rx_count != null ? snap.pkt_rx_count : 0,
     pktLost:   snap.pkt_lost != null ? snap.pkt_lost : 0,
     recovered: snap.pkt_recovered != null ? snap.pkt_recovered : 0,
+    // Ground-station status: GS_MSG_STATUS (0x13) plus the link fields the
+    // GS adds to GS_MSG_TELEM (0x10). Shaped as a snapshot-style object for
+    // GsStatusPanel. Null (not 0) when absent, so the panel renders "--"
+    // instead of presenting missing data as a real zero.
+    gs: {
+      radio_profile:      snap.radio_profile != null ? snap.radio_profile : null,
+      integrity_pct:      snap.integrity_pct != null ? snap.integrity_pct : null,
+      rssi_dbm:           snap.rssi_dbm != null ? snap.rssi_dbm : null,
+      snr_db:             snap.snr_db != null ? snap.snr_db : null,
+      gs_rx_pkt_count:    snap.gs_rx_pkt_count != null ? snap.gs_rx_pkt_count : null,
+      gs_rx_crc_fail:     snap.gs_rx_crc_fail != null ? snap.gs_rx_crc_fail : null,
+      ground_pressure_pa: snap.ground_pressure_pa != null ? snap.ground_pressure_pa : null,
+      ground_lat_deg:     snap.ground_lat_deg != null ? snap.ground_lat_deg : null,
+      ground_lon_deg:     snap.ground_lon_deg != null ? snap.ground_lon_deg : null,
+    },
     pyro: pyro,
   };
 }

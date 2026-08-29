@@ -79,7 +79,11 @@ export function Radar({
       const cx = sz / 2, cy = sz / 2;
 
       // ── GPS real-data mode (lat/lon supplied) ──
-      const hasGPS = connected && padLat && padLon && rocketLat && rocketLon;
+      // Explicit finite-number checks, not truthiness: 0.0 is a legitimate
+      // latitude/longitude (e.g. the equator or prime meridian) and must not
+      // read as "no GPS".
+      const isCoord = (v) => typeof v === 'number' && Number.isFinite(v);
+      const hasGPS = !!connected && isCoord(padLat) && isCoord(padLon) && isCoord(rocketLat) && isCoord(rocketLon);
       let dx = 0, dy = 0, dist = 0;
       if (hasGPS) {
         dy = (rocketLat - padLat) * 111320;

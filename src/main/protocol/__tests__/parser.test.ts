@@ -1,9 +1,9 @@
 /**
  * Tests for the dual-mode message parser.
  *
- * Tests FC_MSG_FAST (21B), FC_MSG_GPS (18B), FC_MSG_EVENT (11B),
+ * Tests FC_MSG_FAST (21B), FC_MSG_GPS (18B, absolute lat/lon), FC_MSG_EVENT (11B),
  * GS_MSG_TELEM (39B), GS_MSG_STATUS (24B) with computed CRC fixtures.
- * Also tests edge cases: negative values, saturated GPS, unknown msg IDs.
+ * Also tests edge cases: negative values, out-of-range GPS coordinates, unknown msg IDs.
  *
  * CRCs are never hand-written — computed via crc32_compute at test runtime.
  */
@@ -72,6 +72,31 @@ function append_crc(pkt: Uint8Array): void {
   const data = pkt.subarray(0, pkt.length - 4);
   const crc = crc32_compute(data);
   write_u32(pkt, pkt.length - 4, crc);
+}
+
+/**
+ * Build a synthetic, CRC-valid FC_MSG_GPS (18-byte) frame from a lat/lon pair.
+ *
+ * Exported so other suites — and later agents driving the UI end-to-end —
+ * can feed a realistic absolute-coordinate GPS packet through the
+ * parser -> store -> renderer pipeline without hand-rolling the byte layout.
+ *
+ * Layout: see FROZEN WIRE CONTRACT FC_MSG_GPS (msg_id 0x02, 18 bytes).
+ */
+export function build_fc_gps_frame(
+  lat_deg: number,
+  lon_deg: number,
+  opts: { alt_msl_m?: number; fix_type?: number; sat_count?: number } = {}
+): Uint8Array {
+  const pkt = new Uint8Array(SIZE_FC_MSG_GPS);
+  pkt[0] = MSG_ID_GPS;
+  write_i32(pkt, 1, Math.round(lat_deg * 1e7));
+  write_i32(pkt, 5, Math.round(lon_deg * 1e7));
+  write_u24(pkt, 9, Math.round((opts.alt_msl_m ?? 0) * 100));
+  pkt[12] = opts.fix_type ?? 3;
+  pkt[13] = opts.sat_count ?? 10;
+  append_crc(pkt);
+  return pkt;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,26 +270,26 @@ describe('parse FC_MSG_GPS', () => {
   /**
    * Build an 18-byte FC_MSG_GPS fixture.
    *
-   * Layout:
+   * Layout (FROZEN WIRE CONTRACT — absolute coordinates):
    *   [0]     0x02
-   *   [1-4]   dlat_mm i32 LE
-   *   [5-8]   dlon_mm i32 LE
+   *   [1-4]   lat_raw i32 LE — absolute latitude,  degrees * 1e7
+   *   [5-8]   lon_raw i32 LE — absolute longitude, degrees * 1e7
    *   [9-11]  alt_raw u24 LE — alt_msl_m = raw * 0.01
    *   [12]    fix_type u8
    *   [13]    sat_count u8
    *   [14-17] CRC-32 LE (computed)
    */
   function build_gps_packet(opts: {
-    dlat_mm?: number;
-    dlon_mm?: number;
+    lat_raw?: number;
+    lon_raw?: number;
     alt_raw?: number;
     fix_type?: number;
     sat_count?: number;
   } = {}): Uint8Array {
     const pkt = new Uint8Array(SIZE_FC_MSG_GPS); // 18 bytes
     pkt[0] = MSG_ID_GPS;
-    write_i32(pkt, 1, opts.dlat_mm ?? 0);
-    write_i32(pkt, 5, opts.dlon_mm ?? 0);
+    write_i32(pkt, 1, opts.lat_raw ?? 0);
+    write_i32(pkt, 5, opts.lon_raw ?? 0);
     write_u24(pkt, 9, opts.alt_raw ?? 0);    // u24 at [9..11]
     pkt[12] = opts.fix_type ?? 3;
     pkt[13] = opts.sat_count ?? 10;
@@ -272,13 +297,13 @@ describe('parse FC_MSG_GPS', () => {
     return pkt;
   }
 
-  it('should parse valid GPS packet', () => {
-    // dlat_mm=50000  -> 50.0 m north
-    // dlon_mm=-30000 -> -30.0 m west
+  it('should parse valid absolute-coordinate GPS packet', () => {
+    // lat_raw=397392000   -> 39.7392 deg (N)
+    // lon_raw=-1049903000 -> -104.9903 deg (W)
     // alt_raw=150000 -> 150000 * 0.01 = 1500.0 m MSL (altitude encoded in cm)
     const pkt = build_gps_packet({
-      dlat_mm: 50000,
-      dlon_mm: -30000,
+      lat_raw: 397392000,
+      lon_raw: -1049903000,
       alt_raw: 150000,
       fix_type: 3,
       sat_count: 12
@@ -289,12 +314,12 @@ describe('parse FC_MSG_GPS', () => {
     if (!result.ok || result.message.type !== 'fc_gps') return;
 
     const data = result.message.data;
-    expect(data.dlat_m).toBeCloseTo(50.0, 1);
-    expect(data.dlon_m).toBeCloseTo(-30.0, 1);
+    expect(data.lat_deg).toBeCloseTo(39.7392, 4);
+    expect(data.lon_deg).toBeCloseTo(-104.9903, 4);
     expect(data.alt_msl_m).toBeCloseTo(1500.0, 1);
     expect(data.fix_type).toBe(3);
     expect(data.sat_count).toBe(12);
-    expect(data.range_saturated).toBe(false);
+    expect(data.coord_out_of_range).toBe(false);
     expect(data.crc_ok).toBe(true);
   });
 
@@ -307,45 +332,72 @@ describe('parse FC_MSG_GPS', () => {
     expect(result.message.data.alt_msl_m).toBeCloseTo(1200.50, 2);
   });
 
-  it('should detect saturated GPS range (i32 max)', () => {
-    const pkt = build_gps_packet({ dlat_mm: 0x7FFFFFFF });
+  it('should flag an out-of-range latitude via the sanity check', () => {
+    // 95 degrees is not a physically valid latitude (max is +/-90).
+    const pkt = build_gps_packet({ lat_raw: 950000000 });
     const result = parse_packet(pkt);
     expect(result.ok).toBe(true);
     if (!result.ok || result.message.type !== 'fc_gps') return;
-    expect(result.message.data.range_saturated).toBe(true);
+    expect(result.message.data.coord_out_of_range).toBe(true);
   });
 
-  it('should detect saturated GPS range (i32 min)', () => {
-    // Write i32 min = 0x80000000 for dlat directly as LE bytes
-    const pkt = new Uint8Array(SIZE_FC_MSG_GPS); // 18 bytes
-    pkt[0] = MSG_ID_GPS;
-    // i32 min: 0x80000000 in little-endian is [0x00, 0x00, 0x00, 0x80]
-    pkt[1] = 0x00; pkt[2] = 0x00; pkt[3] = 0x00; pkt[4] = 0x80;
-    write_i32(pkt, 5, 0);
-    write_u24(pkt, 9, 0);
-    pkt[12] = 3;
-    pkt[13] = 5;
-    append_crc(pkt);
-
+  it('should flag an out-of-range longitude via the sanity check', () => {
+    // 185 degrees is not a physically valid longitude (max is +/-180).
+    const pkt = build_gps_packet({ lon_raw: 1850000000 });
     const result = parse_packet(pkt);
     expect(result.ok).toBe(true);
     if (!result.ok || result.message.type !== 'fc_gps') return;
-    expect(result.message.data.range_saturated).toBe(true);
+    expect(result.message.data.coord_out_of_range).toBe(true);
   });
 
-  it('should handle zero GPS position', () => {
+  it('should treat (0, 0) as a valid coordinate, not a sanity-check failure', () => {
+    // Unlike the old delta encoding (where 0,0 meant "no motion from pad"),
+    // absolute (0,0) is a real, valid coordinate (off the coast of West Africa).
     const pkt = build_gps_packet();
     const result = parse_packet(pkt);
     expect(result.ok).toBe(true);
     if (!result.ok || result.message.type !== 'fc_gps') return;
-    expect(result.message.data.dlat_m).toBe(0);
-    expect(result.message.data.dlon_m).toBe(0);
+    expect(result.message.data.lat_deg).toBe(0);
+    expect(result.message.data.lon_deg).toBe(0);
+    expect(result.message.data.coord_out_of_range).toBe(false);
   });
 
   it('should reject short GPS packet', () => {
     const short_pkt = new Uint8Array([MSG_ID_GPS, 0x00, 0x00]);
     const result = parse_packet(short_pkt);
     expect(result.ok).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // build_fc_gps_frame() round-trip — exact lat/lon + CRC validity/corruption.
+  // -------------------------------------------------------------------------
+
+  it('decodes a build_fc_gps_frame() synthetic frame to the exact expected lat/lon with crc_ok === true', () => {
+    // Distinctive, asymmetric, non-zero coordinate (opposite signs, different
+    // magnitudes) so a sign flip or byte-order error would be visible.
+    const pkt = build_fc_gps_frame(47.6205, -122.3493, { alt_msl_m: 56.0, fix_type: 3, sat_count: 9 });
+    const result = parse_packet(pkt);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'fc_gps') return;
+
+    const data = result.message.data;
+    expect(data.lat_deg).toBeCloseTo(47.6205, 6);
+    expect(data.lon_deg).toBeCloseTo(-122.3493, 6);
+    expect(data.alt_msl_m).toBeCloseTo(56.0, 2);
+    expect(data.fix_type).toBe(3);
+    expect(data.sat_count).toBe(9);
+    expect(data.coord_out_of_range).toBe(false);
+    expect(data.crc_ok).toBe(true);
+  });
+
+  it('rejects a corrupted build_fc_gps_frame() copy with crc_ok === false', () => {
+    const pkt = build_fc_gps_frame(47.6205, -122.3493);
+    const corrupted = new Uint8Array(pkt);
+    corrupted[1] ^= 0xFF; // flip a byte inside lat_deg7
+    const result = parse_packet(corrupted);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== 'fc_gps') return;
+    expect(result.message.data.crc_ok).toBe(false);
   });
 });
 

@@ -607,22 +607,29 @@ export default function FlightTab({ T, sim, scheme, motion, flightConfig = FLIGH
             <Pill T={T} dot color={sim.gpsFix === "3D" ? T.accent : sim.gpsFix === "2D" ? T.warn : T.danger} size="sm">{sim.gpsFix} · {sim.gpsSats} SATS</Pill>
           } style={{ flex: 1 }}>
             {(() => {
-              // tel reports GPS as a delta in degrees from the pad origin.
-              const dlatM = sim.gpsLat * 111320;
-              const dlonM = sim.gpsLon * 111320;
-              const distM = Math.hypot(dlatM, dlonM);
-              const bearing = (Math.atan2(dlonM, dlatM) * 180 / Math.PI + 360) % 360;
+              // sim.gpsLat/gpsLon are absolute WGS84 degrees (see v2/sim.jsx),
+              // matching the real FC_MSG_GPS wire contract. This is a design-preview
+              // sim fixture with no transmitted pad/ground reference, so the "distance
+              // / bearing to pad" readout approximates the pad as the sim's nominal
+              // launch-site coordinate and applies the standard flat-earth conversion
+              // (metres-per-degree-longitude scales by cos(latitude)).
+              const PAD_LAT_SIM = 37.77492;
+              const PAD_LON_SIM = -122.4194;
+              const dyM = (sim.gpsLat - PAD_LAT_SIM) * 111320;
+              const dxM = (sim.gpsLon - PAD_LON_SIM) * 111320 * Math.cos(PAD_LAT_SIM * Math.PI / 180);
+              const distM = Math.hypot(dxM, dyM);
+              const bearing = (Math.atan2(dxM, dyM) * 180 / Math.PI + 360) % 360;
               const fixQuality = sim.gpsFix === "3D" ? "EXCELLENT" : sim.gpsFix === "2D" ? "DEGRADED" : "NO FIX";
               const fixColor = sim.gpsFix === "3D" ? T.accent : sim.gpsFix === "2D" ? T.warn : T.danger;
               return (
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: SPACE.s3, marginBottom: SPACE.s3 }}>
                     <div>
-                      <Cap T={T}>Δ LATITUDE</Cap>
+                      <Cap T={T}>LATITUDE</Cap>
                       <div style={{ fontFamily: FONT.mono, fontSize: 18, fontWeight: 700, color: T.strong, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{sim.gpsLat.toFixed(5)}°</div>
                     </div>
                     <div>
-                      <Cap T={T}>Δ LONGITUDE</Cap>
+                      <Cap T={T}>LONGITUDE</Cap>
                       <div style={{ fontFamily: FONT.mono, fontSize: 18, fontWeight: 700, color: T.strong, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{sim.gpsLon.toFixed(5)}°</div>
                     </div>
                     <div>

@@ -1,7 +1,5 @@
 import { app, BrowserWindow, shell, Menu } from 'electron'
 import { join } from 'path'
-import { appendFileSync } from 'fs'
-import { tmpdir } from 'os'
 
 import { FcUsb } from './transport/fc_usb'
 import { GsUsb } from './transport/gs_usb'
@@ -60,21 +58,6 @@ function create_window(): void {
 // Data pipeline wiring
 // ---------------------------------------------------------------------------
 
-// --- TEMP DEBUG: GS pipeline file logger (uncommitted bring-up aid) ---
-const GS_DEBUG_LOG = join(tmpdir(), 'casper_gs_debug.log')
-function gslog(line: string): void {
-  try {
-    appendFileSync(GS_DEBUG_LOG, `${new Date().toISOString()} ${line}\n`)
-  } catch {
-    /* best-effort debug logging */
-  }
-}
-function hex(frame: Uint8Array, max = 48): string {
-  return Array.from(frame.subarray(0, max))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join(' ') + (frame.length > max ? ' …' : '')
-}
-
 /**
  * Wire GS frames through the protocol parser into the telemetry store
  * and CAC machine. GS frames arrive COBS-decoded with msg_id as byte 0.
@@ -84,13 +67,11 @@ function wire_gs_pipeline(): void {
     if (frame.length < 1) return
 
     console.log(`[GS] frame received: ${frame.length} bytes, msg_id=0x${frame[0].toString(16).padStart(2, '0')}`)
-    gslog(`RX ${frame.length}B id=0x${frame[0].toString(16).padStart(2, '0')} | ${hex(frame)}`)
 
     const result = parse_packet(frame)
 
     if (!result.ok) {
       console.warn(`[GS] parse error: ${result.error}${result.msg_id !== undefined ? ` (msg_id=0x${result.msg_id.toString(16).padStart(2, '0')})` : ''}`)
-      gslog(`  PARSE-ERR ${result.error}${result.msg_id !== undefined ? ` (id=0x${result.msg_id.toString(16).padStart(2, '0')})` : ''}`)
       return
     }
 
@@ -98,25 +79,29 @@ function wire_gs_pipeline(): void {
     console.log(`[GS] parsed message type: ${msg.type}`)
     switch (msg.type) {
       case 'gs_telem':
-        gslog(`  gs_telem crc=${msg.data.crc_ok} seq=${msg.data.seq} alt=${msg.data.alt_m.toFixed(2)}m vel=${msg.data.vel_mps.toFixed(1)} batt=${msg.data.batt_v.toFixed(2)}V rssi=${msg.data.rssi_dbm.toFixed(1)} snr=${msg.data.snr_db.toFixed(1)} age=${msg.data.data_age_ms}ms`)
         store.update_from_gs_telem(msg.data)
         cac.on_telemetry_status(msg.data.status)
         break
       case 'fc_fast':
-        gslog(`  fc_fast crc=${msg.data.crc_ok} seq=${msg.data.seq} alt=${msg.data.alt_m.toFixed(2)}m vel=${msg.data.vel_mps.toFixed(1)} batt=${msg.data.batt_v.toFixed(2)}V`)
         store.update_from_fc_fast(msg.data)
         cac.on_telemetry_status(msg.data.status)
         break
       case 'fc_gps':
-        gslog(`  fc_gps crc=${msg.data.crc_ok} fix=${msg.data.fix_type} sats=${msg.data.sat_count} alt_msl=${msg.data.alt_msl_m.toFixed(2)}m`)
+        // GPS is the one packet type where CRC is NOT advisory: a corrupt
+        // coordinate is persistent and plausible-looking (unlike a bad
+        // altitude, which self-corrects at the next 10 Hz sample), so a
+        // failed CRC here is dropped rather than applied.
+        if (!msg.data.crc_ok) {
+          console.warn('[GS] CRC mismatch on FC_MSG_GPS — dropping fix')
+          store.note_gps_crc_drop()
+          break
+        }
         store.update_from_gps(msg.data)
         break
       case 'fc_event':
-        gslog(`  fc_event crc=${msg.data.crc_ok} type=${msg.data.event_type} data=${msg.data.event_data}`)
         store.update_from_event(msg.data)
         break
       case 'gs_status':
-        gslog(`  gs_status crc=${msg.data.crc_ok} profile=${msg.data.radio_profile} rssi=${msg.data.last_rssi_dbm} snr=${msg.data.last_snr_db} rx=${msg.data.rx_pkt_count} crcfail=${msg.data.rx_crc_fail} gndP=${msg.data.ground_pressure_pa}Pa lat=${msg.data.ground_lat_deg.toFixed(6)} lon=${msg.data.ground_lon_deg.toFixed(6)}`)
         if (!msg.data.crc_ok) {
           console.warn('[GS] CRC mismatch on GS_MSG_STATUS — applying anyway')
         }
@@ -125,11 +110,8 @@ function wire_gs_pipeline(): void {
       case 'ack_arm':
       case 'ack_fire':
       case 'nack':
-        gslog(`  ${msg.type}`)
         cac.on_message(msg)
         break
-      default:
-        gslog(`  (unhandled type: ${msg.type})`)
     }
   })
 }
@@ -160,8 +142,12 @@ function wire_fc_pipeline(): void {
         cac.on_telemetry_status(msg.data.status)
         break
       case 'fc_gps':
+        // See wire_gs_pipeline(): GPS CRC is enforced, not advisory — drop
+        // rather than apply a corrupt fix.
         if (!msg.data.crc_ok) {
-          console.warn('[FC] CRC mismatch on FC_MSG_GPS')
+          console.warn('[FC] CRC mismatch on FC_MSG_GPS — dropping fix')
+          store.note_gps_crc_drop()
+          break
         }
         store.update_from_gps(msg.data)
         break

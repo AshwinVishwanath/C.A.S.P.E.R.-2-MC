@@ -114,22 +114,22 @@ export interface TelemetrySnapshot {
   pyro: [PyroState, PyroState, PyroState, PyroState];
 
   // --- GPS (1-5 Hz) ---
-  /** Delta latitude from pad origin in metres. */
-  gps_dlat_m: number;
-  /** Delta longitude from pad origin in metres. */
-  gps_dlon_m: number;
+  /** Absolute GPS latitude in degrees (WGS84). */
+  gps_lat_deg: number;
+  /** Absolute GPS longitude in degrees (WGS84). */
+  gps_lon_deg: number;
   /** GPS altitude MSL in metres. */
   gps_alt_msl_m: number;
-  /** GPS altitude AGL in metres. */
-  gps_alt_agl_m: number;
   /** GPS fix type (0=none, 2=2D, 3=3D). */
   gps_fix: number;
   /** Number of satellites in use. */
   gps_sats: number;
   /** Position dilution of precision. */
   gps_pdop: number;
-  /** True if a range field saturated its encoding. */
-  gps_range_saturated: boolean;
+  /** True if lat/lon decoded outside the physically valid range — sanity check on a corrupt/misaligned payload. */
+  gps_coord_out_of_range: boolean;
+  /** Cumulative count of FC_MSG_GPS packets dropped for failing CRC (never applied to gps_lat_deg/gps_lon_deg). */
+  gps_crc_drop_count: number;
 
   // --- Link quality ---
   /** Received signal strength in dBm. */
@@ -258,14 +258,14 @@ export const DEFAULT_SNAPSHOT: TelemetrySnapshot = {
   ],
 
   // GPS
-  gps_dlat_m: 0,
-  gps_dlon_m: 0,
+  gps_lat_deg: 0,
+  gps_lon_deg: 0,
   gps_alt_msl_m: 0,
-  gps_alt_agl_m: 0,
   gps_fix: 0,
   gps_sats: 0,
   gps_pdop: 0,
-  gps_range_saturated: false,
+  gps_coord_out_of_range: false,
+  gps_crc_drop_count: 0,
 
   // Link quality
   rssi_dbm: 0,

@@ -150,13 +150,27 @@ export class TelemetryStore {
    */
   update_from_gps(parsed: FcMsgGps): void {
     const s = this.snapshot;
-    s.gps_dlat_m = parsed.dlat_m;
-    s.gps_dlon_m = parsed.dlon_m;
+    s.gps_lat_deg = parsed.lat_deg;
+    s.gps_lon_deg = parsed.lon_deg;
     s.gps_alt_msl_m = parsed.alt_msl_m;
     s.gps_fix = parsed.fix_type;
     s.gps_sats = parsed.sat_count;
     s.gps_pdop = parsed.pdop;
-    s.gps_range_saturated = parsed.range_saturated;
+    s.gps_coord_out_of_range = parsed.coord_out_of_range;
+    this._notify();
+  }
+
+  /**
+   * Record an FC_MSG_GPS packet that was dropped for failing CRC.
+   *
+   * Unlike other telemetry, GPS position is never applied on a CRC failure
+   * (see src/main/index.ts) — a corrupt fix is persistent and plausible-looking,
+   * not self-correcting at the next sample like a bad altitude reading would be.
+   * This just makes the drop visible in the snapshot; gps_lat_deg/gps_lon_deg
+   * are left untouched.
+   */
+  note_gps_crc_drop(): void {
+    this.snapshot.gps_crc_drop_count += 1;
     this._notify();
   }
 

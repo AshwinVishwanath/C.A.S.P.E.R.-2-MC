@@ -288,14 +288,17 @@ function parse_fc_fast(payload: Uint8Array, compute_derived_vals: boolean): Pars
  *
  * Layout (18 bytes total):
  *   [0]     msg_id (0x02)
- *   [1-4]   dlat (i32, LE) — delta latitude in mm
- *   [5-8]   dlon (i32, LE) — delta longitude in mm
+ *   [1-4]   lat_deg7 (i32, LE) — ABSOLUTE latitude,  degrees * 1e-7 (UBX NAV-PVT encoding)
+ *   [5-8]   lon_deg7 (i32, LE) — ABSOLUTE longitude, degrees * 1e-7
  *   [9-11]  alt_msl (u24, LE) — altitude MSL = raw * 0.01 (metres; firmware encodes in cm)
  *   [12]    fix_type (u8)
  *   [13]    sat_count (u8)
  *   [14-17] CRC-32 (u32, LE) — over bytes [0..13]
  *
- * Note: pdop and range_saturated are derived from the fix/sat fields.
+ * Note: pdop is not present in the direct FC GPS packet (defaulted to 0).
+ * coord_out_of_range is a sanity check on the decoded degrees, not a wire
+ * field — it flags a corrupt payload (or a layout mismatch) that happens to
+ * pass CRC but decodes to a lat/lon outside the physically valid range.
  */
 function parse_fc_gps(payload: Uint8Array): ParseResult {
   if (payload.length < SIZE_FC_MSG_GPS) {
@@ -308,28 +311,30 @@ function parse_fc_gps(payload: Uint8Array): ParseResult {
 
   const crc_ok = verify_packet_crc(payload);
 
-  const dlat_mm = read_i32_le(payload, 1);
-  const dlon_mm = read_i32_le(payload, 5);
+  const lat_raw = read_i32_le(payload, 1);
+  const lon_raw = read_i32_le(payload, 5);
   const alt_raw = read_u24_le(payload, 9);
   const fix_type = payload[12];
   const sat_count = payload[13];
 
-  // Check for range saturation: i32 max/min values indicate saturation
-  const I32_MAX = 0x7FFFFFFF;
-  const I32_MIN = -0x80000000;
-  const range_saturated =
-    dlat_mm === I32_MAX || dlat_mm === I32_MIN ||
-    dlon_mm === I32_MAX || dlon_mm === I32_MIN;
+  const lat_deg = lat_raw / 1e7;
+  const lon_deg = lon_raw / 1e7;
+
+  // Sanity check on the decoded coordinate — not a saturation check. The
+  // wire field is now an absolute coordinate, not a delta that could
+  // saturate, so this instead catches garbage/misaligned decodes.
+  const coord_out_of_range =
+    lat_deg < -90 || lat_deg > 90 || lon_deg < -180 || lon_deg > 180;
 
   const data: FcMsgGps = {
     msg_id: MSG_ID_GPS,
-    dlat_m: dlat_mm / 1000.0,
-    dlon_m: dlon_mm / 1000.0,
+    lat_deg,
+    lon_deg,
     alt_msl_m: alt_raw * GPS_ALT_SCALE,
     fix_type,
     sat_count,
     pdop: 0, // Not present in direct FC GPS packet
-    range_saturated,
+    coord_out_of_range,
     crc_ok
   };
 
@@ -401,8 +406,11 @@ function parse_fc_event(payload: Uint8Array): ParseResult {
  *   [33-34] yaw_raw (i16, LE) — yaw_deg = raw * 0.1    (GS sends 0; MC derives from quat)
  *   [35-38] CRC-32 (u32, LE) — over bytes [0..34]
  *
- * NOTE: GS currently sends euler/mach/qbar/freq_err as 0. The store must derive attitude
- * from the quaternion and mach/qbar from alt/vel — do NOT trust these packet fields.
+ * NOTE: roll/pitch/yaw/mach/qbar ARE populated by the GS (freq_err/recovery remain
+ * reserved-0). The store reads these fields straight from the packet — see
+ * telemetry_store.ts's update_from_gs_telem() — and must NOT re-derive attitude from
+ * the quaternion or mach/qbar from alt/vel for this path (that re-derivation is only
+ * correct for the FC-direct FAST path, which carries none of these fields).
  */
 function parse_gs_telem(payload: Uint8Array): ParseResult {
   if (payload.length < SIZE_GS_MSG_TELEM) {

@@ -72,13 +72,13 @@ function make_gs_telem(overrides?: Partial<GsMsgTelem>): GsMsgTelem {
 function make_fc_gps(overrides?: Partial<FcMsgGps>): FcMsgGps {
   return {
     msg_id: 0x02,
-    dlat_m: 12.5,
-    dlon_m: -3.2,
+    lat_deg: 12.5,
+    lon_deg: -3.2,
     alt_msl_m: 1500.0,
     fix_type: 3,
     sat_count: 10,
     pdop: 1.2,
-    range_saturated: false,
+    coord_out_of_range: false,
     crc_ok: true,
     ...overrides
   };
@@ -579,22 +579,22 @@ describe('TelemetryStore', () => {
 
   it('update_from_gps() updates GPS fields', () => {
     store.update_from_gps(make_fc_gps({
-      dlat_m: 55.5,
-      dlon_m: -22.3,
+      lat_deg: 55.5,
+      lon_deg: -22.3,
       alt_msl_m: 2000.0,
       fix_type: 3,
       sat_count: 14,
       pdop: 0.9,
-      range_saturated: true
+      coord_out_of_range: true
     }));
     const snap = store.get_snapshot();
-    expect(snap.gps_dlat_m).toBe(55.5);
-    expect(snap.gps_dlon_m).toBe(-22.3);
+    expect(snap.gps_lat_deg).toBe(55.5);
+    expect(snap.gps_lon_deg).toBe(-22.3);
     expect(snap.gps_alt_msl_m).toBe(2000.0);
     expect(snap.gps_fix).toBe(3);
     expect(snap.gps_sats).toBe(14);
     expect(snap.gps_pdop).toBe(0.9);
-    expect(snap.gps_range_saturated).toBe(true);
+    expect(snap.gps_coord_out_of_range).toBe(true);
   });
 
   it('reset() restores factory defaults and clears events', () => {

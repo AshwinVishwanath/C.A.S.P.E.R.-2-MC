@@ -140,10 +140,10 @@ export interface FcMsgFast {
 /** FC_MSG_GPS — GPS position packet (msg_id 0x02). */
 export interface FcMsgGps {
   msg_id: number;
-  /** Delta latitude from pad origin in metres. */
-  dlat_m: number;
-  /** Delta longitude from pad origin in metres. */
-  dlon_m: number;
+  /** Absolute latitude in degrees (WGS84, UBX NAV-PVT encoding: raw * 1e-7). */
+  lat_deg: number;
+  /** Absolute longitude in degrees (WGS84, UBX NAV-PVT encoding: raw * 1e-7). */
+  lon_deg: number;
   /** Altitude MSL in metres. FC_GPS_ALT * 10.0 */
   alt_msl_m: number;
   /** GPS fix type (0=none, 2=2D, 3=3D). */
@@ -152,8 +152,8 @@ export interface FcMsgGps {
   sat_count: number;
   /** Position dilution of precision. */
   pdop: number;
-  /** True if a range field saturated its encoding. */
-  range_saturated: boolean;
+  /** True if lat/lon decoded outside the physically valid range ([-90,90]/[-180,180]) — sanity check, not a wire field. */
+  coord_out_of_range: boolean;
   /** True if CRC verified OK. */
   crc_ok: boolean;
 }
