@@ -13,7 +13,7 @@
  * @module ipc/handlers
  */
 
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, BrowserWindow, dialog, clipboard } from 'electron';
 import { promises as fsp } from 'fs';
 import { parse_openrocket_csv } from '../sim/openrocket_csv';
 import { phase_to_fsm, type SimSamplePush } from '../sim/sim_types';
@@ -68,7 +68,8 @@ import {
   CH_COMPILE_LOGIC,
   CH_SIM_LOAD,
   CH_SIM_PUSH,
-  CH_SIM_ACTIVE
+  CH_SIM_ACTIVE,
+  CH_CLIPBOARD_WRITE
 } from './channels';
 
 // ---------------------------------------------------------------------------
@@ -467,6 +468,25 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
   });
 
   // -----------------------------------------------------------------------
+  // 9b. Clipboard — recovery panel "copy coordinates" (invoke — returns promise)
+  // -----------------------------------------------------------------------
+
+  ipcMain.handle(CH_CLIPBOARD_WRITE, async (_event, text: string) => {
+    try {
+      if (typeof text !== 'string' || text.length === 0) {
+        return { ok: false, error: 'Nothing to copy' };
+      }
+      clipboard.writeText(text);
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Clipboard write failed: ${err instanceof Error ? err.message : String(err)}`
+      };
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // 10. Logic VM — compile and upload
   // -----------------------------------------------------------------------
 
@@ -647,6 +667,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeHandler(CH_UPLOAD_LOGIC);
     ipcMain.removeHandler(CH_COMPILE_LOGIC);
     ipcMain.removeHandler(CH_SIM_LOAD);
+    ipcMain.removeHandler(CH_CLIPBOARD_WRITE);
 
     // Remove fire-and-forget listeners
     ipcMain.removeListener(CH_SCAN_PORTS, on_scan_ports);

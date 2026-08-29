@@ -30,7 +30,14 @@ import SetupTab from './tabs/SetupTab.jsx';
 // ---------------------------------------------------------------------------
 const TABS = [
   { id: 'setup',    label: 'SETUP',  icon: 'setup'  },
-  { id: 'test',     label: 'TEST',   icon: 'test'   },
+  // TEST tab hidden 2026-08-29. Its two diagnostic panels were not honest --
+  // SensorDiagnostics rendered six hardcoded rows describing Casper-2 hardware,
+  // and the Diagnostics table never resolves because the FC self-test IPC is a
+  // stub whose reply carries no `id` to match against. The tab also hosts the
+  // CAC arming console, which is not needed for the first flight (no pyros).
+  // Kept, not deleted: restore by uncommenting the line below. TestTab.jsx and
+  // its children are still imported and rendered, so nothing here bit-rots.
+  // { id: 'test',     label: 'TEST',   icon: 'test'   },
   { id: 'flight',   label: 'FLIGHT', icon: 'flight' },
   { id: 'tracking', label: 'TRACK',  icon: 'track'  },
 ];

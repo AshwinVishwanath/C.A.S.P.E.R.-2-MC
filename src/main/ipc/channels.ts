@@ -74,6 +74,12 @@ export const CH_DOWNLOAD_LOG = 'casper:download-flight-log';
 /** Export flight log data as CSV files. Args: (type: 'hr' | 'lr' | 'summary' | 'all'). */
 export const CH_EXPORT_LOG_CSV = 'casper:export-log-csv';
 
+/**
+ * Write text to the system clipboard (used by the recovery panel's
+ * "copy coordinates" button). Args: (text: string). Returns { ok, error? }.
+ */
+export const CH_CLIPBOARD_WRITE = 'casper:clipboard-write';
+
 // ---------------------------------------------------------------------------
 // Renderer -> Main send channels (fire-and-forget)
 // ---------------------------------------------------------------------------

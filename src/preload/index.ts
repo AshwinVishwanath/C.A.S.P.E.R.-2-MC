@@ -155,6 +155,13 @@ const casper_api = {
   /** Mark simulation active/inactive (drives live indicators + reset). */
   sim_active: (active: boolean): void => {
     ipcRenderer.send('casper:sim-active', active)
+  },
+
+  // --- Clipboard (recovery panel "copy coordinates") ---
+
+  /** Write text to the system clipboard. Resolves { ok, error? }. */
+  copy_to_clipboard: (text: string): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:clipboard-write', text)
   }
 }
 

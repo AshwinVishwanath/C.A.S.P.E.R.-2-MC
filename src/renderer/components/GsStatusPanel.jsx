@@ -58,6 +58,20 @@ function StatCell({ label, value, unit, color, theme }) {
   );
 }
 
+function profileLabel(p) {
+  if (p == null) return null;
+  return p === 0 ? "A · SF7" : p === 1 ? "B · SF9" : String(p);
+}
+
+// The GS only reports a position once its own receiver has a fix; until then
+// the packet carries 0/0, which is a real coordinate in the Gulf of Guinea and
+// must not be shown as one.
+function groundPosLabel(lat, lon) {
+  if (lat == null || lon == null) return null;
+  if (lat === 0 && lon === 0) return "NO FIX";
+  return lat.toFixed(5) + ", " + lon.toFixed(5);
+}
+
 export function GsStatusPanel({ snapshot, theme }) {
   var T = theme;
   var s = snapshot || {};
@@ -99,7 +113,10 @@ export function GsStatusPanel({ snapshot, theme }) {
         </span>
       </div>
 
-      {/* 2-column grid */}
+      {/* 2-column grid — every cell is backed by a real GS_MSG_STATUS (0x13)
+          or GS_MSG_TELEM (0x10) field. The former "GS Battery" and "GS Temp"
+          cells were removed: the 24-byte 0x13 payload carries no such fields,
+          so they could only ever have rendered "--". */}
       <div
         style={{
           padding: "10px 12px",
@@ -109,40 +126,53 @@ export function GsStatusPanel({ snapshot, theme }) {
         }}
       >
         <StatCell
-          label="GS Battery"
-          value={s.gs_batt_v != null ? s.gs_batt_v.toFixed(2) : null}
-          unit="V"
-          theme={T}
-        />
-        <StatCell
-          label="GS Temp"
-          value={s.gs_temp_c != null ? s.gs_temp_c.toFixed(1) : null}
-          unit={"\u00B0C"}
-          theme={T}
-        />
-        <StatCell
           label="Radio Profile"
-          value={s.radio_profile != null ? s.radio_profile : null}
-          theme={T}
-        />
-        <StatCell
-          label="Packets RX"
-          value={s.pkt_rx_count != null ? s.pkt_rx_count : null}
-          theme={T}
-        />
-        <StatCell
-          label="Packets Lost"
-          value={s.pkt_lost != null ? s.pkt_lost : null}
-          color={s.pkt_lost > 0 ? T.warn : undefined}
+          value={profileLabel(s.radio_profile)}
           theme={T}
         />
         <StatCell
           label="Link Integrity"
-          value={
-            s.integrity_pct != null ? s.integrity_pct.toFixed(1) : null
-          }
+          value={s.integrity_pct != null ? s.integrity_pct.toFixed(1) : null}
           unit="%"
           color={intColor}
+          theme={T}
+        />
+        <StatCell
+          label="RSSI"
+          value={s.rssi_dbm != null ? s.rssi_dbm.toFixed(0) : null}
+          unit="dBm"
+          theme={T}
+        />
+        <StatCell
+          label="SNR"
+          value={s.snr_db != null ? s.snr_db.toFixed(1) : null}
+          unit="dB"
+          theme={T}
+        />
+        <StatCell
+          label="Packets RX"
+          value={s.gs_rx_pkt_count != null ? s.gs_rx_pkt_count : null}
+          theme={T}
+        />
+        <StatCell
+          label="CRC Fails"
+          value={s.gs_rx_crc_fail != null ? s.gs_rx_crc_fail : null}
+          color={s.gs_rx_crc_fail > 0 ? T.warn : undefined}
+          theme={T}
+        />
+        <StatCell
+          label="Ground Pressure"
+          value={
+            s.ground_pressure_pa
+              ? (s.ground_pressure_pa / 100).toFixed(1)
+              : null
+          }
+          unit="hPa"
+          theme={T}
+        />
+        <StatCell
+          label="GS Position"
+          value={groundPosLabel(s.ground_lat_deg, s.ground_lon_deg)}
           theme={T}
         />
       </div>

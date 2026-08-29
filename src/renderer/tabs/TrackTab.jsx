@@ -10,14 +10,17 @@
  *   2-col grid:
  *     GPS · Delta Scope  (420px Radar + 4 stat tiles)
  *     ATTITUDE · QUATERNION  (420px Rocket3D + 3 stat tiles: roll/pitch/yaw)
+ *   Recovery · Walk To It (ground track + copy-coordinates + QR — see track/RecoveryPanel.jsx)
  *   Flight log readout (wraps FlightLogPanel)
  */
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useTheme, useTweaksValue } from '../design/ThemeContext';
 import { Cap, Pill, Panel } from '../design/components';
 import { Radar, Rocket3D } from '../design/instruments';
 import { FONT, SPACE, TYPE, SCHEME_PROPS } from '../design/tokens.js';
 import FlightLogReadout from './track/FlightLogReadout.jsx';
+import RecoveryPanel from './track/RecoveryPanel.jsx';
+import { GsStatusPanel } from '../components/GsStatusPanel.jsx';
 
 // Simple haversine-style range (flat-earth approx, metres)
 function gpsRange(lat1, lon1, lat2, lon2) {
@@ -43,21 +46,13 @@ export default function TrackTab({ tel, serial }) {
   const t = tel || {};
   const isGlassy = scheme === 'obsidian' || scheme === 'fusion';
 
-  // Latch pad origin on first valid GPS fix
-  const [padLat, setPadLat] = useState(null);
-  const [padLon, setPadLon] = useState(null);
-
-  useEffect(() => {
-    if (padLat === null && t.gpsLat && t.gpsLat !== 0) {
-      setPadLat(t.gpsLat);
-      setPadLon(t.gpsLon);
-    }
-  }, [t.gpsLat, t.gpsLon, padLat]);
-
+  // GPS now reports absolute coordinates (see FROZEN WIRE CONTRACT FC_MSG_GPS) —
+  // there is no separate transmitted pad/ground reference point, so there is no
+  // real "pad origin" to reconstruct or latch here any more.
   const rocketLat = t.gpsLat || 0;
   const rocketLon = t.gpsLon || 0;
-  const pLat = padLat || rocketLat;
-  const pLon = padLon || rocketLon;
+  const pLat = rocketLat;
+  const pLon = rocketLon;
   const connected = serial && serial.gs_connected;
 
   const range_m   = gpsRange(pLat, pLon, rocketLat, rocketLon);
@@ -207,6 +202,22 @@ export default function TrackTab({ tel, serial }) {
           </div>
         </Panel>
       </div>
+
+      {/* Recovery — ground track, copy-coordinates, QR-to-phone */}
+      <RecoveryPanel
+        T={T}
+        scheme={scheme}
+        motion={motion}
+        lat={rocketLat}
+        lon={rocketLon}
+        gpsFix={t.gpsFix}
+        gpsSats={t.gpsSats}
+      />
+
+      {/* Ground-station status (GS_MSG_STATUS 0x13). Emitted at 1 Hz by the
+          GS in COBS mode; until that firmware is flashed every cell reads
+          "--" rather than showing a stale or invented value. */}
+      <GsStatusPanel snapshot={t.gs} theme={T} />
 
       {/* Flight log readout */}
       <FlightLogReadout serial={serial} />
