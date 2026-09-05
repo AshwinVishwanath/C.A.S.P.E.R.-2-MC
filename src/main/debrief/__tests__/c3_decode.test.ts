@@ -457,6 +457,99 @@ describe('c3_series', () => {
   });
 });
 
+describe('build_series windowing (chart drag-zoom)', () => {
+  /** A cheap HR record; bypasses byte encoding so the test stays about the
+   *  series logic and can afford thousands of samples. */
+  const synth = (t_ms: number, alt: number, fsm = 1) => ({
+    timestamp_ms: t_ms,
+    baro_pressure: 50000,
+    lsm6_accel: [0, 1024, 0] as [number, number, number],
+    lsm6_gyro: [0, 0, 0] as [number, number, number],
+    adxl372: [0, 0, 0] as [number, number, number],
+    mmc: [0, 0, 0] as [number, number, number],
+    ekf_alt_m: alt,
+    ekf_vel_mps: 0,
+    quat_packed: new Uint8Array(5),
+    fsm_state: fsm,
+    flags: 0,
+    ekf_accel_bias: 0,
+    ekf_baro_bias: 0,
+    imu_temp: 2500,
+    baro_temp: 2400,
+    seq_num: 1,
+    sustain_ms: 0,
+    crc16: 0,
+    crc_ok: true,
+  });
+
+  /** 6000 samples at 400 Hz = 15 s, apogee at t = 10 s. */
+  const flight = () => {
+    const hr = [];
+    for (let i = 0; i < 6000; i++) {
+      const t_s = i / 400;
+      hr.push(synth(1000 + i * 2.5, t_s <= 10 ? t_s * 100 : (15 - t_s) * 100));
+    }
+    return {
+      index: {
+        flight_id: 1, start_tick_ms: 1000, end_tick_ms: 16000,
+        hr_start_addr: 0, hr_end_addr: 0, lr_start_addr: 0, lr_end_addr: 0,
+        bmi_start_addr: 0, flags: 0,
+      },
+      prologue: null,
+      scales: { quat_scale: 1, alt_scale_m: 0.01, vel_scale_dms: 0.1,
+        time_scale_100ms: 0.1, batt_offset_v: 6, batt_step_v: 0.012 },
+      hr, lr: [], bmi: [], slot2_is_legacy_adxl: false, warnings: [],
+    } as never;
+  };
+
+  it('echoes the window back so a stale response is identifiable', () => {
+    expect(build_series(flight(), null).window).toBeNull();
+    expect(build_series(flight(), { t0: 2, t1: 4 }).window).toEqual({ t0: 2, t1: 4 });
+  });
+
+  it('confines the series to the window', () => {
+    const out = build_series(flight(), { t0: 5, t1: 6 });
+    const alt = out.groups.find((g) => g.key === 'altitude').series[0];
+    expect(alt.t[0]).toBeGreaterThanOrEqual(5);
+    expect(alt.t[alt.t.length - 1]).toBeLessThanOrEqual(6);
+  });
+
+  it('gains resolution inside the window rather than stretching the same points', () => {
+    const full = build_series(flight(), null);
+    const full_alt = full.groups.find((g) => g.key === 'altitude').series[0];
+    const in_window = full_alt.t.filter((t) => t >= 5 && t <= 6).length;
+
+    const zoomed = build_series(flight(), { t0: 5, t1: 6 });
+    const zoom_alt = zoomed.groups.find((g) => g.key === 'altitude').series[0];
+
+    // 1 s of a 15 s flight is ~1/15th of the full series' points; windowing
+    // before decimating must do substantially better than that.
+    expect(zoom_alt.t.length).toBeGreaterThan(in_window * 2);
+  });
+
+  it('keeps statistics whole-flight even when the charts are zoomed', () => {
+    const full = build_series(flight(), null);
+    // Window excludes apogee entirely.
+    const zoomed = build_series(flight(), { t0: 0, t1: 1 });
+    expect(zoomed.stats.apogee_m).toBeCloseTo(full.stats.apogee_m, 6);
+    expect(zoomed.stats.apogee_t_s).toBeCloseTo(full.stats.apogee_t_s, 6);
+    expect(zoomed.stats.hr_count).toBe(full.stats.hr_count);
+  });
+
+  it('keeps the full state timeline so the bands stay correct when zoomed', () => {
+    const full = build_series(flight(), null);
+    const zoomed = build_series(flight(), { t0: 5, t1: 6 });
+    expect(zoomed.states).toEqual(full.states);
+  });
+
+  it('yields an empty series for a window containing no records', () => {
+    const out = build_series(flight(), { t0: 100, t1: 101 });
+    // Empty panels are dropped rather than drawn as empty axes.
+    expect(out.groups.find((g) => g.key === 'altitude')).toBeUndefined();
+    expect(out.stats.apogee_m).not.toBeNull();
+  });
+});
+
 describe('flash map', () => {
   it('pins the pool bounds the decoder relies on', () => {
     // Guards against a firmware re-carve landing here unnoticed: these are

@@ -101,6 +101,33 @@ export interface FlightSeries {
   states: StateSpan[];
   /** Grouped for the UI: each group becomes one chart panel. */
   groups: { key: string; title: string; unit: string; series: Series[] }[];
+  /** The window the series were built over, echoed back so the renderer can
+   *  tell a refined zoom from a stale response that arrived out of order. */
+  window: SeriesWindow | null;
+}
+
+/** A time range in seconds, relative to the flight's first record. */
+export interface SeriesWindow {
+  t0: number;
+  t1: number;
+}
+
+/**
+ * Narrow ascending (t, v) arrays to a window.
+ *
+ * The point of doing this BEFORE decimation is resolution: the series a chart
+ * receives are ~1400 buckets spread over the whole flight, so zooming into two
+ * seconds of a 90-second flight would leave about thirty points. Filtering the
+ * full-rate records first and decimating the remainder gives the zoomed view
+ * its own 1400 buckets — at 400 Hz that is genuinely every sample.
+ */
+function windowed(t: number[], v: number[], w: SeriesWindow | null): [number[], number[]] {
+  if (!w || t.length === 0) return [t, v];
+  let lo = 0;
+  let hi = t.length;
+  while (lo < hi && t[lo] < w.t0) lo++;
+  while (hi > lo && t[hi - 1] > w.t1) hi--;
+  return [t.slice(lo, hi), v.slice(lo, hi)];
 }
 
 // ---------------------------------------------------------------------------
@@ -191,8 +218,16 @@ function finite_max(v: number[]): number | null {
  * 20-minute pad dwell puts launch at t = 1200 s and makes every chart
  * unreadable. Where the FSM leaves PAD the transition is reported in `states`
  * so the launch instant stays visible.
+ *
+ * `window` narrows only the SERIES. Statistics and the state timeline are
+ * always computed over the whole flight: a zoomed chart must not change what
+ * the summary calls the apogee, and "max accel" that silently means "max
+ * accel in the part you happen to be looking at" is a trap.
  */
-export function build_series(flight: DecodedFlight): FlightSeries {
+export function build_series(
+  flight: DecodedFlight,
+  window: SeriesWindow | null = null,
+): FlightSeries {
   const hr: HrRecord[] = flight.hr;
   const lr: LrRecord[] = flight.lr;
   const bmi: BmiRecord[] = flight.bmi;
@@ -333,30 +368,42 @@ export function build_series(flight: DecodedFlight): FlightSeries {
   };
 
   // --- Panels -------------------------------------------------------------
+  /** Window, then decimate. Order matters — see `windowed`. */
+  const dec = (
+    t_raw: number[],
+    v_raw: number[],
+    key: string,
+    label: string,
+    unit: string,
+  ): Series => {
+    const [tw, vw] = windowed(t_raw, v_raw, window);
+    return decimate(tw, vw, key, label, unit);
+  };
+
   const groups: FlightSeries['groups'] = [
     {
       key: 'altitude',
       title: 'Altitude',
       unit: 'm',
       series: [
-        decimate(t_hr, alt, 'ekf_alt', 'EKF altitude', 'm'),
-        decimate(t_lr, gps_alt, 'gps_alt', 'GPS altitude MSL', 'm'),
+        dec(t_hr, alt, 'ekf_alt', 'EKF altitude', 'm'),
+        dec(t_lr, gps_alt, 'gps_alt', 'GPS altitude MSL', 'm'),
       ],
     },
     {
       key: 'velocity',
       title: 'Vertical velocity',
       unit: 'm/s',
-      series: [decimate(t_hr, vel, 'ekf_vel', 'EKF velocity', 'm/s')],
+      series: [dec(t_hr, vel, 'ekf_vel', 'EKF velocity', 'm/s')],
     },
     {
       key: 'accel_axes',
       title: 'Acceleration — body frame',
       unit: 'g',
       series: [
-        decimate(t_hr, ay, 'a_y', 'LSM6 +Y (nose)', 'g'),
-        decimate(t_hr, ax, 'a_x', 'LSM6 X', 'g'),
-        decimate(t_hr, az, 'a_z', 'LSM6 Z', 'g'),
+        dec(t_hr, ay, 'a_y', 'LSM6 +Y (nose)', 'g'),
+        dec(t_hr, ax, 'a_x', 'LSM6 X', 'g'),
+        dec(t_hr, az, 'a_z', 'LSM6 Z', 'g'),
       ],
     },
     {
@@ -364,9 +411,9 @@ export function build_series(flight: DecodedFlight): FlightSeries {
       title: 'Acceleration magnitude — IMU cross-check',
       unit: 'g',
       series: [
-        decimate(t_hr, amag, 'a_lsm6', 'LSM6DSO32', 'g'),
-        decimate(t_bmi, b_amag, 'a_bmi', 'BMI088', 'g'),
-        decimate(t_hr, highg, 'a_adxl', 'ADXL372 (high-g)', 'g'),
+        dec(t_hr, amag, 'a_lsm6', 'LSM6DSO32', 'g'),
+        dec(t_bmi, b_amag, 'a_bmi', 'BMI088', 'g'),
+        dec(t_hr, highg, 'a_adxl', 'ADXL372 (high-g)', 'g'),
       ],
     },
     {
@@ -374,25 +421,25 @@ export function build_series(flight: DecodedFlight): FlightSeries {
       title: 'Angular rate — body frame',
       unit: 'deg/s',
       series: [
-        decimate(t_hr, gmag, 'g_lsm6', 'LSM6DSO32 |w|', 'deg/s'),
-        decimate(t_bmi, b_gmag, 'g_bmi', 'BMI088 |w|', 'deg/s'),
-        decimate(t_hr, gy, 'g_roll', 'LSM6 roll rate (+Y)', 'deg/s'),
+        dec(t_hr, gmag, 'g_lsm6', 'LSM6DSO32 |w|', 'deg/s'),
+        dec(t_bmi, b_gmag, 'g_bmi', 'BMI088 |w|', 'deg/s'),
+        dec(t_hr, gy, 'g_roll', 'LSM6 roll rate (+Y)', 'deg/s'),
       ],
     },
     {
       key: 'baro',
       title: 'Barometric pressure',
       unit: 'hPa',
-      series: [decimate(t_hr, baro, 'baro', 'MS5611', 'hPa')],
+      series: [dec(t_hr, baro, 'baro', 'MS5611', 'hPa')],
     },
     {
       key: 'temp',
       title: 'Die temperature',
       unit: '°C',
       series: [
-        decimate(t_hr, imu_temp, 't_lsm6', 'LSM6DSO32', '°C'),
-        decimate(t_bmi, b_temp, 't_bmi', 'BMI088 accel die', '°C'),
-        decimate(t_hr, baro_temp, 't_baro', 'MS5611', '°C'),
+        dec(t_hr, imu_temp, 't_lsm6', 'LSM6DSO32', '°C'),
+        dec(t_bmi, b_temp, 't_bmi', 'BMI088 accel die', '°C'),
+        dec(t_hr, baro_temp, 't_baro', 'MS5611', '°C'),
       ],
     },
     {
@@ -400,24 +447,24 @@ export function build_series(flight: DecodedFlight): FlightSeries {
       title: 'Radio link',
       unit: 'dB',
       series: [
-        decimate(t_lr, rssi, 'rssi', 'RSSI', 'dBm'),
-        decimate(t_lr, snr, 'snr', 'SNR', 'dB'),
+        dec(t_lr, rssi, 'rssi', 'RSSI', 'dBm'),
+        dec(t_lr, snr, 'snr', 'SNR', 'dB'),
       ],
     },
     {
       key: 'gps_sats',
       title: 'GPS satellites',
       unit: 'sv',
-      series: [decimate(t_lr, sats, 'sats', 'Satellites used', 'sv')],
+      series: [dec(t_lr, sats, 'sats', 'Satellites used', 'sv')],
     },
     {
       key: 'pyro',
       title: 'Pyro continuity (raw ADC)',
       unit: 'counts',
       series: [
-        decimate(t_lr, cont[0], 'cont1', 'Channel 1', 'counts'),
-        decimate(t_lr, cont[1], 'cont2', 'Channel 2', 'counts'),
-        decimate(t_lr, cont[2], 'cont3', 'Channel 3', 'counts'),
+        dec(t_lr, cont[0], 'cont1', 'Channel 1', 'counts'),
+        dec(t_lr, cont[1], 'cont2', 'Channel 2', 'counts'),
+        dec(t_lr, cont[2], 'cont3', 'Channel 3', 'counts'),
       ],
     },
   ];
@@ -428,5 +475,5 @@ export function build_series(flight: DecodedFlight): FlightSeries {
     .map((g) => ({ ...g, series: g.series.filter((s) => s.t.length > 0) }))
     .filter((g) => g.series.length > 0);
 
-  return { stats, states, groups: non_empty };
+  return { stats, states, groups: non_empty, window };
 }

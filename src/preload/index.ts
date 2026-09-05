@@ -181,9 +181,17 @@ const casper_api = {
     return ipcRenderer.invoke('casper:debrief-open')
   },
 
-  /** Decode one flight out of the loaded image and get its chart series. */
-  debrief_flight: (flight_id: number): Promise<unknown> => {
-    return ipcRenderer.invoke('casper:debrief-flight', flight_id)
+  /**
+   * Decode one flight out of the loaded image and get its chart series.
+   * `range` ({ t0, t1 } in seconds from the flight's first record) re-decimates
+   * the series over just that window at full record resolution — that is what
+   * makes the charts' drag-zoom reveal detail. Statistics stay whole-flight.
+   */
+  debrief_flight: (
+    flight_id: number,
+    range?: { t0: number; t1: number } | null
+  ): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:debrief-flight', flight_id, range ?? null)
   },
 
   /** Reveal the saved .bin in the OS file manager. */

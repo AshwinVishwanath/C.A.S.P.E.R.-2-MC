@@ -21,7 +21,7 @@ import { join, dirname } from 'path';
 import type { FcUsb } from '../transport/fc_usb';
 import { run_dump, type DumpOptions, type DumpProgress } from './c3_dump_client';
 import { list_flights, decode_flight, blank_flash, type DecodedFlight } from './c3_decode';
-import { build_series, type FlightSeries } from './c3_series';
+import { build_series, type FlightSeries, type SeriesWindow } from './c3_series';
 import { hr_to_csv, lr_to_csv, bmi_to_csv, type CsvStream } from './c3_csv';
 import { LOG_FLASH_END, fsm_name, type IndexEntry, type Prologue } from './c3_log_format';
 
@@ -218,8 +218,17 @@ export interface FlightDetail {
   state_summary: string[];
 }
 
-/** Decode one flight out of the cached image and build its chart series. */
-export function get_flight_detail(flight_id: number): FlightDetail | { ok: false; error: string } {
+/**
+ * Decode one flight out of the cached image and build its chart series.
+ *
+ * `window` re-decimates the series over just that time range at full record
+ * resolution — that is what makes the charts' drag-zoom reveal detail rather
+ * than stretch the points it already had. Statistics stay whole-flight.
+ */
+export function get_flight_detail(
+  flight_id: number,
+  window: SeriesWindow | null = null,
+): FlightDetail | { ok: false; error: string } {
   if (!loaded) return { ok: false, error: 'No flash image loaded. Download from the FC or open a .bin first.' };
 
   const i = loaded.index.findIndex((e) => e.flight_id === flight_id);
@@ -231,7 +240,7 @@ export function get_flight_detail(flight_id: number): FlightDetail | { ok: false
     i + 1 < loaded.index.length ? loaded.index[i + 1] : null,
     loaded.prologue,
   );
-  const series = build_series(decoded);
+  const series = build_series(decoded, window);
 
   return {
     ok: true,

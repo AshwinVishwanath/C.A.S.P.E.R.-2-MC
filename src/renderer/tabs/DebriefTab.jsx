@@ -9,7 +9,7 @@
  * Reveal button, because that file is the only copy of the flight data off
  * the chip and a decoder problem must never cost a re-dump.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../design/ThemeContext';
 import { Cap, Pill, Panel, Btn, StatTile, Toggle, SegToggle } from '../design/components.jsx';
 import { FONT, SPACE, TYPE, RADIUS } from '../design/tokens.js';
@@ -45,6 +45,8 @@ export default function DebriefTab({ serial }) {
   const [csvStream, setCsvStream] = useState('hr');
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState(null);
+  const [zoom, setZoom] = useState(null); // { t0, t1 } shared by every chart
+  const [expandedKey, setExpandedKey] = useState(null);
 
   // Progress subscription lives for the life of the tab: a dump takes minutes
   // and subscribing only while `busy` would race the first event.
@@ -53,16 +55,44 @@ export default function DebriefTab({ serial }) {
     return api.on_debrief_progress((p) => setProgress(p));
   }, [api]);
 
-  const load_flight = useCallback(
-    async (flight_id) => {
+  // Monotonic request id. A zoom is a round trip to the main process, and a
+  // fast drag can leave an earlier, wider response in flight behind a newer
+  // one; without this the chart can settle on the stale window.
+  const req_seq = useRef(0);
+
+  const fetch_flight = useCallback(
+    async (flight_id, range) => {
       if (!api?.debrief_flight) return;
-      setSelected(flight_id);
-      setDetail(null);
-      const res = await api.debrief_flight(flight_id);
+      const seq = ++req_seq.current;
+      const res = await api.debrief_flight(flight_id, range ?? null);
+      if (seq !== req_seq.current) return; // superseded
       if (res?.ok) setDetail(res);
       else setError(res?.error ?? 'Could not decode that flight.');
     },
     [api],
+  );
+
+  const load_flight = useCallback(
+    async (flight_id) => {
+      setSelected(flight_id);
+      setDetail(null);
+      setZoom(null);
+      await fetch_flight(flight_id, null);
+    },
+    [fetch_flight],
+  );
+
+  /** A chart finished a drag (or asked for a reset). Applies to every chart. */
+  const on_brush = useCallback(
+    (range) => {
+      if (selected == null) return;
+      // Ignore a selection too thin to hold records — it would produce empty
+      // charts and look like a decode failure.
+      if (range && !(range.t1 - range.t0 > 1e-3)) return;
+      setZoom(range);
+      fetch_flight(selected, range);
+    },
+    [selected, fetch_flight],
   );
 
   /** Shared post-load path for both Download and Open. */
@@ -135,7 +165,10 @@ export default function DebriefTab({ serial }) {
     }
   };
 
+  // When zoomed, the domain is exactly what was dragged — not the extent of
+  // the records that came back, which would creep inward on a sparse stream.
   const t_bounds = useMemo(() => {
+    if (zoom) return { lo: zoom.t0, hi: zoom.t1 };
     let lo = Infinity;
     let hi = -Infinity;
     for (const g of groups) {
@@ -146,7 +179,29 @@ export default function DebriefTab({ serial }) {
       }
     }
     return Number.isFinite(lo) ? { lo, hi } : { lo: 0, hi: 1 };
-  }, [groups]);
+  }, [groups, zoom]);
+
+  // Falls back to null if the expanded panel disappears (different flight, or
+  // a stream with no records), which also dismisses the overlay.
+  const expanded_group = expandedKey ? (groups.find((g) => g.key === expandedKey) ?? null) : null;
+
+  const [view_h, setViewH] = useState(() =>
+    typeof window !== 'undefined' ? window.innerHeight : 800,
+  );
+  useEffect(() => {
+    const on_resize = () => setViewH(window.innerHeight);
+    window.addEventListener('resize', on_resize);
+    return () => window.removeEventListener('resize', on_resize);
+  }, []);
+
+  useEffect(() => {
+    if (!expandedKey) return undefined;
+    const on_key = (e) => {
+      if (e.key === 'Escape') setExpandedKey(null);
+    };
+    window.addEventListener('keydown', on_key);
+    return () => window.removeEventListener('keydown', on_key);
+  }, [expandedKey]);
 
   const pct =
     progress && progress.bytes_total > 0
@@ -505,22 +560,85 @@ export default function DebriefTab({ serial }) {
       )}
 
       {groups.length > 0 && (
+        <>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: SPACE.s3,
+              flexWrap: 'wrap',
+              font: `400 ${TYPE.micro}px ${FONT.mono}`,
+              color: T.muted,
+            }}
+          >
+            <Cap>TIME RANGE</Cap>
+            <span style={{ color: zoom ? T.accent : T.muted }}>
+              {zoom
+                ? `${zoom.t0.toFixed(3)} – ${zoom.t1.toFixed(3)} s  (${(zoom.t1 - zoom.t0).toFixed(3)} s)`
+                : 'full flight'}
+            </span>
+            {zoom && (
+              <Btn size="sm" onClick={() => on_brush(null)}>
+                Reset zoom
+              </Btn>
+            )}
+            <span style={{ color: T.faint }}>
+              Drag across any chart to zoom every chart · double-click to reset
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
+              gap: SPACE.s4,
+            }}
+          >
+            {groups.map((g) => (
+              <FlightChart
+                key={g.key}
+                group={g}
+                states={states}
+                t_min={t_bounds.lo}
+                t_max={t_bounds.hi}
+                onBrush={on_brush}
+                zoomed={zoom != null}
+                onToggleExpand={setExpandedKey}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Full-screen single chart. Rendered as a sibling overlay rather than
+          by restyling the grid cell, so the grid keeps its layout underneath
+          and returning from full screen cannot reflow the page. */}
+      {expanded_group && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${expanded_group.title} — full screen`}
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
-            gap: SPACE.s4,
+            position: 'fixed',
+            inset: 0,
+            zIndex: 90,
+            background: T.bg,
+            padding: SPACE.s5,
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          {groups.map((g) => (
-            <FlightChart
-              key={g.key}
-              group={g}
-              states={states}
-              t_min={t_bounds.lo}
-              t_max={t_bounds.hi}
-            />
-          ))}
+          <FlightChart
+            group={expanded_group}
+            states={states}
+            t_min={t_bounds.lo}
+            t_max={t_bounds.hi}
+            onBrush={on_brush}
+            zoomed={zoom != null}
+            expanded
+            onToggleExpand={() => setExpandedKey(null)}
+            height={Math.max(320, view_h - 140)}
+          />
         </div>
       )}
 

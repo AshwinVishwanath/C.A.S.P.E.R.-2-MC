@@ -45,6 +45,7 @@ import {
   export_flight_csv,
 } from '../debrief/debrief_service';
 import type { CsvStream } from '../debrief/c3_csv';
+import type { SeriesWindow } from '../debrief/c3_series';
 import type { DumpProgress } from '../debrief/c3_dump_client';
 import { compile_logic_graph } from '../protocol/logic_compiler';
 import type { LogicGraphIR } from '../protocol/logic_program';
@@ -635,13 +636,19 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     }
   });
 
-  ipcMain.handle(CH_DEBRIEF_FLIGHT, async (_event, flight_id: number) => {
-    try {
-      return get_flight_detail(flight_id);
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
+  // `range` is deliberately not called `window` — that name is the
+  // BrowserWindow destructured at the top of this function, and shadowing it
+  // here would be an easy way to send a chart zoom to a dialog.
+  ipcMain.handle(
+    CH_DEBRIEF_FLIGHT,
+    async (_event, flight_id: number, range: SeriesWindow | null = null) => {
+      try {
+        return get_flight_detail(flight_id, range);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 
   ipcMain.handle(CH_DEBRIEF_REVEAL, async () => ({ ok: reveal_bin() }));
 
