@@ -281,10 +281,22 @@ export function Rocket3D({ T: propT, size = 240, quat, motion = true, scheme }) 
       ctx.scale(dpr, dpr);
       const cx = W / 2, cy = H / 2, sc = Math.min(W, H) * 0.30;
 
-      // Resolve quaternion → rotation matrix (body→NED from App.jsx)
+      // Resolve quaternion → rotation matrix
       let qw, qx, qy, qz;
       if (quat && quat.length === 4) {
-        [qw, qx, qy, qz] = quat;
+        // Raw FC body->nav quaternion (flight/nav/casper_quat.c): Z-up nav
+        // frame, body +Y = nose. Rotate into this canvas's Y-up display
+        // frame via q_zup2yup (ORIENTATION_SPEC.md §7.2) before building the
+        // rotation matrix below -- fed straight through, the pad/upright
+        // quaternion [0.7071,0.7071,0,0] does not render nose-up (it must
+        // map to the identity here; that is the spec's own verification
+        // check).
+        const [bw, bx, by, bz] = quat;
+        const S = Math.SQRT1_2;
+        qw = S * (bw + bx);
+        qx = S * (bx - bw);
+        qy = S * (by + bz);
+        qz = S * (bz - by);
       } else if (quat && typeof quat === 'object') {
         // {roll, pitch, yaw} in radians (design format)
         const r = quat.roll  || 0;
@@ -313,18 +325,21 @@ export function Rocket3D({ T: propT, size = 240, quat, motion = true, scheme }) 
         qz = cr*cp*sy2 - sr*sp*cy2;
       }
 
-      // Rotation matrix (body→NED)
+      // Rotation matrix (display frame, Y = up)
       const r00 = 1-2*(qy*qy+qz*qz), r01 = 2*(qx*qy-qw*qz), r02 = 2*(qx*qz+qw*qy);
       const r10 = 2*(qx*qy+qw*qz),   r11 = 1-2*(qx*qx+qz*qz), r12 = 2*(qy*qz-qw*qx);
       const r20 = 2*(qx*qz-qw*qy),   r21 = 2*(qy*qz+qw*qx),   r22 = 1-2*(qx*qx+qy*qy);
 
-      // Transform: model Y=nose, match App.jsx convention
+      // Transform: model authored nose-along +Y, which already matches this
+      // rotation's own Y=nose/up axis once the quaternion above is in the
+      // display frame -- no extra axis remap needed (a prior version had one
+      // here that folded in a reflection, det -1, and rendered the correct
+      // orientation only at a few coincidental attitudes such as identity).
       const xf = ([x, y, z]) => {
-        const bx = x, by = z, bz = -y;
-        const nx = r00*bx + r01*by + r02*bz;
-        const ny = r10*bx + r11*by + r12*bz;
-        const nz = r20*bx + r21*by + r22*bz;
-        return [ny, -nz, nx];
+        const nx = r00*x + r01*y + r02*z;
+        const ny = r10*x + r11*y + r12*z;
+        const nz = r20*x + r21*y + r22*z;
+        return [nx, ny, nz];
       };
       const pj = ([x, y, z]) => {
         const d2 = 5, f = d2 / (d2 - z * 0.3);
