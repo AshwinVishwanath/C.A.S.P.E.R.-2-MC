@@ -128,3 +128,30 @@ export const CH_UPLOAD_LOGIC = 'casper:upload-logic';
 
 /** Compile a logic graph offline (no FC required). Args: (graph: LogicGraphIR). */
 export const CH_COMPILE_LOGIC = 'casper:compile-logic';
+
+// ---------------------------------------------------------------------------
+// Debrief (Casper-3 flash dump + flight analysis)
+// ---------------------------------------------------------------------------
+// Distinct from the CH_DOWNLOAD_LOG family above: that is the Casper-2
+// readout (READOUT_CMD_*, MAGIC_CASP). Casper-3 uses the `CDMP` region dump
+// and a completely different on-chip layout, so it gets its own channels
+// rather than a mode flag bolted onto the C2 ones.
+
+/** Dump progress pushed during a Casper-3 flash download. */
+export const CH_DEBRIEF_PROGRESS = 'casper:debrief-progress';
+
+/** Pull the FC's flash, save the .bin, return the flight list.
+ *  Args: ({ include_prelaunch: boolean }). */
+export const CH_DEBRIEF_DOWNLOAD = 'casper:debrief-download';
+
+/** Open a previously saved .bin via a file dialog. Args: none. */
+export const CH_DEBRIEF_OPEN = 'casper:debrief-open';
+
+/** Decode one flight from the loaded image. Args: (flight_id: number). */
+export const CH_DEBRIEF_FLIGHT = 'casper:debrief-flight';
+
+/** Reveal the saved .bin in the OS file manager. Args: none. */
+export const CH_DEBRIEF_REVEAL = 'casper:debrief-reveal';
+
+/** Request cancellation of an in-flight dump (fire-and-forget). */
+export const CH_DEBRIEF_CANCEL = 'casper:debrief-cancel';

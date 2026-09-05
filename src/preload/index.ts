@@ -162,6 +162,45 @@ const casper_api = {
   /** Write text to the system clipboard. Resolves { ok, error? }. */
   copy_to_clipboard: (text: string): Promise<unknown> => {
     return ipcRenderer.invoke('casper:clipboard-write', text)
+  },
+
+  // --- Debrief (Casper-3 flash dump + flight analysis) ---
+  // Separate from download_flight_log() above, which is the Casper-2 readout.
+
+  /**
+   * Pull the FC's flash over the CDMP dump protocol, save the .bin, and
+   * resolve to the flight list. `include_prelaunch` adds the 39 MiB PAD wrap
+   * region — needed only when launch detect missed.
+   */
+  debrief_download: (opts: { include_prelaunch?: boolean }): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:debrief-download', opts)
+  },
+
+  /** Open a previously saved .bin through a file dialog. */
+  debrief_open: (): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:debrief-open')
+  },
+
+  /** Decode one flight out of the loaded image and get its chart series. */
+  debrief_flight: (flight_id: number): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:debrief-flight', flight_id)
+  },
+
+  /** Reveal the saved .bin in the OS file manager. */
+  debrief_reveal: (): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:debrief-reveal')
+  },
+
+  /** Ask an in-progress dump to stop at the next chunk boundary. */
+  debrief_cancel: (): void => {
+    ipcRenderer.send('casper:debrief-cancel')
+  },
+
+  /** Subscribe to dump progress. Returns an unsubscribe function. */
+  on_debrief_progress: (cb: (progress: unknown) => void): (() => void) => {
+    const handler = (_e: unknown, progress: unknown): void => cb(progress)
+    ipcRenderer.on('casper:debrief-progress', handler)
+    return () => ipcRenderer.removeListener('casper:debrief-progress', handler)
   }
 }
 

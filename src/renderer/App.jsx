@@ -24,6 +24,7 @@ import FlightTab from './tabs/FlightTabV2.jsx'; // v2-design Flight tab on live 
 import TestTab from './tabs/TestTab.jsx';
 import TrackTab from './tabs/TrackTab.jsx';
 import SetupTab from './tabs/SetupTab.jsx';
+import DebriefTab from './tabs/DebriefTab.jsx';
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -40,6 +41,7 @@ const TABS = [
   // { id: 'test',     label: 'TEST',   icon: 'test'   },
   { id: 'flight',   label: 'FLIGHT', icon: 'flight' },
   { id: 'tracking', label: 'TRACK',  icon: 'track'  },
+  { id: 'debrief',  label: 'DEBRIEF', icon: 'graph' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -132,6 +134,7 @@ function Shell({ tweaks, setTweak, telemetry, serial, command, diag, flightSim }
           {activeTab === 'test'     && <TestTab tel={telemetry} diag={diag} cmd={command} />}
           {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} flightSim={flightSim} tweaks={tweaks} />}
           {activeTab === 'tracking' && <TrackTab tel={telemetry} serial={serial} />}
+          {activeTab === 'debrief'  && <DebriefTab serial={serial} />}
         </main>
       </div>
 

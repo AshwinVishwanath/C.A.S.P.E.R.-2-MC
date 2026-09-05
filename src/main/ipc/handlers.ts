@@ -37,6 +37,13 @@ import type { FlightConfig } from '../protocol/types';
 import { run_readout, run_erase } from '../readout/readout_orchestrator';
 import { export_all_csv, export_hr_csv, export_lr_csv, export_summary_csv } from '../readout/csv_export';
 import type { ReadoutResult } from '../readout/readout_types';
+import {
+  download_debrief,
+  open_debrief_bin,
+  get_flight_detail,
+  reveal_bin,
+} from '../debrief/debrief_service';
+import type { DumpProgress } from '../debrief/c3_dump_client';
 import { compile_logic_graph } from '../protocol/logic_compiler';
 import type { LogicGraphIR } from '../protocol/logic_program';
 import {
@@ -66,6 +73,12 @@ import {
   CH_EXPORT_LOG_CSV,
   CH_UPLOAD_LOGIC,
   CH_COMPILE_LOGIC,
+  CH_DEBRIEF_PROGRESS,
+  CH_DEBRIEF_DOWNLOAD,
+  CH_DEBRIEF_OPEN,
+  CH_DEBRIEF_FLIGHT,
+  CH_DEBRIEF_REVEAL,
+  CH_DEBRIEF_CANCEL,
   CH_SIM_LOAD,
   CH_SIM_PUSH,
   CH_SIM_ACTIVE,
@@ -576,6 +589,59 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
       console.error('[IPC] sim_flight error:', err);
     }
   };
+  // -------------------------------------------------------------------------
+  // Debrief (Casper-3)
+  // -------------------------------------------------------------------------
+
+  /** Set while a dump is running; polled by the client between chunks. */
+  let debrief_cancel = false;
+
+  const on_debrief_cancel = (): void => {
+    debrief_cancel = true;
+  };
+  ipcMain.on(CH_DEBRIEF_CANCEL, on_debrief_cancel);
+
+  ipcMain.handle(
+    CH_DEBRIEF_DOWNLOAD,
+    async (_event, opts: { include_prelaunch?: boolean } = {}) => {
+      debrief_cancel = false;
+      try {
+        return await download_debrief(fc, {
+          include_prelaunch: opts.include_prelaunch === true,
+          on_progress: (p: DumpProgress) => safe_send(window, CH_DEBRIEF_PROGRESS, p),
+          should_cancel: () => debrief_cancel,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        safe_send(window, CH_DEBRIEF_PROGRESS, {
+          phase: 'error',
+          bytes_done: 0,
+          bytes_total: 0,
+          error: message,
+        });
+        return { ok: false, error: message };
+      }
+    },
+  );
+
+  ipcMain.handle(CH_DEBRIEF_OPEN, async () => {
+    try {
+      return await open_debrief_bin(window);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(CH_DEBRIEF_FLIGHT, async (_event, flight_id: number) => {
+    try {
+      return get_flight_detail(flight_id);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(CH_DEBRIEF_REVEAL, async () => ({ ok: reveal_bin() }));
+
   ipcMain.on(CH_CMD_SIM_FLIGHT, on_sim_flight);
 
   // -----------------------------------------------------------------------
@@ -668,6 +734,10 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeHandler(CH_COMPILE_LOGIC);
     ipcMain.removeHandler(CH_SIM_LOAD);
     ipcMain.removeHandler(CH_CLIPBOARD_WRITE);
+    ipcMain.removeHandler(CH_DEBRIEF_DOWNLOAD);
+    ipcMain.removeHandler(CH_DEBRIEF_OPEN);
+    ipcMain.removeHandler(CH_DEBRIEF_FLIGHT);
+    ipcMain.removeHandler(CH_DEBRIEF_REVEAL);
 
     // Remove fire-and-forget listeners
     ipcMain.removeListener(CH_SCAN_PORTS, on_scan_ports);
@@ -685,5 +755,6 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeListener(CH_CMD_SIM_FLIGHT, on_sim_flight);
     ipcMain.removeListener(CH_SIM_PUSH, on_sim_push);
     ipcMain.removeListener(CH_SIM_ACTIVE, on_sim_active);
+    ipcMain.removeListener(CH_DEBRIEF_CANCEL, on_debrief_cancel);
   };
 }
