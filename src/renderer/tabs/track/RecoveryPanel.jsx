@@ -4,13 +4,13 @@
 // QR-to-phone) into one Panel, matching TrackTab's existing panel/grid
 // conventions. See GroundTrack.jsx, CopyCoordsButton.jsx, RecoveryQr.jsx and
 // recovery_geo.js for the pieces themselves.
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Cap, Pill, Panel, StatTile } from '../../design/components.jsx';
 import { FONT, SPACE, TYPE } from '../../design/tokens.js';
 import { GroundTrack } from './GroundTrack.jsx';
 import { CopyCoordsButton } from './CopyCoordsButton.jsx';
 import { RecoveryQr } from './RecoveryQr.jsx';
-import { formatCoordPair, isValidFix } from './recovery_geo.js';
+import { formatCoordPair, isValidFix, pickStableFix, STABLE_FIX_HYSTERESIS_M } from './recovery_geo.js';
 
 /**
  * Props:
@@ -22,10 +22,25 @@ import { formatCoordPair, isValidFix } from './recovery_geo.js';
 export default function RecoveryPanel({ T, scheme, motion, lat, lon, gpsFix, gpsSats }) {
   const fixOk = isValidFix(gpsFix, lat, lon);
 
+  // The coordinate readout, copy button and QR code all target the same
+  // hysteresis-locked fix (pickStableFix), not the raw live one -- ordinary
+  // stationary GPS jitter otherwise regenerates the QR code on every single
+  // update, which cannot practically be scanned. GroundTrack still gets the
+  // raw lat/lon below, unfiltered, so the jitter itself stays visible there
+  // as a diagnostic of fix quality.
+  const [lockedFix, setLockedFix] = useState(null);
+  useEffect(() => {
+    if (!fixOk) return;
+    setLockedFix((prev) => pickStableFix(prev, lat, lon));
+  }, [fixOk, lat, lon]);
+  const targetLat = lockedFix ? lockedFix.lat : lat;
+  const targetLon = lockedFix ? lockedFix.lon : lon;
+
   // Distance/bearing from launch is computed by GroundTrack internally
-  // (it owns the launch latch); this panel only needs the raw fix for the
-  // coordinate readout, copy button, and QR — it does not duplicate a
-  // second "reference point" concept.
+  // (it owns the launch latch); this panel only needs the raw fix for
+  // GroundTrack's own trail — the coordinate readout, copy button, and QR
+  // use the locked target above instead, and do not duplicate a second
+  // "reference point" concept.
 
   return (
     <Panel
@@ -51,8 +66,8 @@ export default function RecoveryPanel({ T, scheme, motion, lat, lon, gpsFix, gps
         <div style={{ display: 'flex', flexDirection: 'column', gap: SPACE.s4 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: SPACE.s3 }}>
             <StatTile
-              label="LATEST FIX"
-              value={fixOk ? formatCoordPair(lat, lon) : 'NO FIX'}
+              label="RECOVERY TARGET"
+              value={fixOk ? formatCoordPair(targetLat, targetLon) : 'NO FIX'}
               color={fixOk ? T.strong : T.warn}
               style={{ gridColumn: '1 / -1' }}
             />
@@ -60,18 +75,19 @@ export default function RecoveryPanel({ T, scheme, motion, lat, lon, gpsFix, gps
 
           <div style={{ display: 'flex', gap: SPACE.s3, alignItems: 'flex-start' }}>
             <div style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', gap: SPACE.s3 }}>
-              <CopyCoordsButton lat={lat} lon={lon} disabled={!fixOk} />
+              <CopyCoordsButton lat={targetLat} lon={targetLon} disabled={!fixOk} />
               <div style={{
                 fontFamily: FONT.mono, fontSize: TYPE.cap, color: T.muted, lineHeight: 1.5,
               }}>
                 Copies "lat, lon" — paste directly into Google Maps' search box.
                 Scan the QR with a phone (needs cell data) to open Maps there
-                directly.
+                directly. Holds steady through ordinary GPS jitter (~
+                {STABLE_FIX_HYSTERESIS_M} m) — only moves on a real fix change.
               </div>
             </div>
 
             <div style={{ flexShrink: 0 }}>
-              <RecoveryQr lat={lat} lon={lon} disabled={!fixOk} size={132} />
+              <RecoveryQr lat={targetLat} lon={targetLon} disabled={!fixOk} size={132} />
             </div>
           </div>
         </div>

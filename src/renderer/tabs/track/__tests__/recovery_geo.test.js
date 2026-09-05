@@ -13,7 +13,14 @@ import {
   formatDistanceShort,
   formatCoordPair,
   buildGoogleMapsUrl,
+  pickStableFix,
+  STABLE_FIX_HYSTERESIS_M,
 } from '../recovery_geo.js';
+
+// One degree of latitude offset that's comfortably smaller/larger than the
+// hysteresis radius, expressed in degrees so the tests read as geo distances
+// rather than magic decimal fractions.
+const metersToLatDeg = (m) => m / M_PER_DEG;
 
 describe('isValidFix', () => {
   it('is false with no fix, even when lat/lon are numeric zero (default snapshot)', () => {
@@ -119,5 +126,44 @@ describe('buildGoogleMapsUrl', () => {
     expect(parsed.origin + parsed.pathname).toBe('https://www.google.com/maps/search/');
     expect(parsed.searchParams.get('api')).toBe('1');
     expect(parsed.searchParams.get('query')).toBe('1.0000000,2.0000000');
+  });
+});
+
+describe('pickStableFix', () => {
+  const base = { lat: 40, lon: -105 };
+
+  it('takes the new fix unchanged when there is no locked target yet', () => {
+    expect(pickStableFix(null, base.lat, base.lon)).toEqual(base);
+  });
+
+  it('holds the locked target through ordinary jitter under the threshold', () => {
+    const jitterLat = base.lat + metersToLatDeg(STABLE_FIX_HYSTERESIS_M * 0.3);
+    const result = pickStableFix(base, jitterLat, base.lon);
+    expect(result).toEqual(base);
+  });
+
+  it('holds exactly at the threshold (boundary is exclusive, not inclusive)', () => {
+    const atThresholdLat = base.lat + metersToLatDeg(STABLE_FIX_HYSTERESIS_M);
+    const result = pickStableFix(base, atThresholdLat, base.lon);
+    expect(result).toEqual(base);
+  });
+
+  it('jumps to the new fix once it moves past the threshold', () => {
+    const movedLat = base.lat + metersToLatDeg(STABLE_FIX_HYSTERESIS_M * 3);
+    const result = pickStableFix(base, movedLat, base.lon);
+    expect(result).toEqual({ lat: movedLat, lon: base.lon });
+  });
+
+  it('respects a custom threshold', () => {
+    const movedLat = base.lat + metersToLatDeg(50);
+    expect(pickStableFix(base, movedLat, base.lon, 100)).toEqual(base);
+    expect(pickStableFix(base, movedLat, base.lon, 10)).toEqual({ lat: movedLat, lon: base.lon });
+  });
+
+  it('never mutates the locked target object it was given', () => {
+    const locked = { lat: base.lat, lon: base.lon };
+    const frozen = { ...locked };
+    pickStableFix(locked, base.lat + metersToLatDeg(STABLE_FIX_HYSTERESIS_M * 5), base.lon);
+    expect(locked).toEqual(frozen);
   });
 });

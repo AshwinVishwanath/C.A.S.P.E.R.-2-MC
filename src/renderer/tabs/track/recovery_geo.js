@@ -96,6 +96,41 @@ export function formatCoordPair(lat, lon, decimals = 6) {
 }
 
 /**
+ * Ordinary stationary-GPS jitter — commonly several metres, more with fewer
+ * satellites or a lower-sensitivity LNA setting (see docs/TODO_KNOWN_ISSUES.md
+ * item 23) — moves the raw fix enough on every single update to regenerate
+ * the recovery QR code and copy-coordinates target each time. A QR code that
+ * changes every second cannot practically be scanned. This is the default
+ * hysteresis radius (metres) below which a new fix does NOT replace the
+ * locked recovery target.
+ */
+export const STABLE_FIX_HYSTERESIS_M = 8;
+
+/**
+ * Hysteresis-gate a live fix against the recovery target currently locked
+ * in (the one the QR code / copy-coordinates button / "latest fix" readout
+ * show) — NOT the raw ground-track trail, which should keep showing every
+ * sample so the jitter itself stays visible as a diagnostic.
+ *
+ * Returns the new fix unchanged if there is no locked target yet, or if the
+ * new fix is more than `thresholdM` from the current one (so real motion —
+ * e.g. still descending under a parachute — is tracked immediately, with no
+ * lag, since real movement between GPS updates is far larger than ordinary
+ * jitter). Otherwise returns the previous locked target unchanged.
+ *
+ * @param {{lat: number, lon: number}|null} locked - current locked target, or null before the first fix
+ * @param {number} lat - new fix latitude
+ * @param {number} lon - new fix longitude
+ * @param {number} thresholdM - hysteresis radius in metres
+ * @returns {{lat: number, lon: number}}
+ */
+export function pickStableFix(locked, lat, lon, thresholdM = STABLE_FIX_HYSTERESIS_M) {
+  if (!locked) return { lat, lon };
+  const moved = rangeMeters(locked.lat, locked.lon, lat, lon);
+  return moved > thresholdM ? { lat, lon } : locked;
+}
+
+/**
  * A Google Maps "search" deep link for (lat, lon).
  *
  * Chose the `/maps/search/?api=1&query=LAT,LON` form (Google's documented
