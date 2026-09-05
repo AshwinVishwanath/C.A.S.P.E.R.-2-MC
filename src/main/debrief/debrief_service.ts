@@ -17,11 +17,12 @@
 
 import { app, dialog, shell, type BrowserWindow } from 'electron';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import type { FcUsb } from '../transport/fc_usb';
 import { run_dump, type DumpOptions, type DumpProgress } from './c3_dump_client';
 import { list_flights, decode_flight, blank_flash, type DecodedFlight } from './c3_decode';
 import { build_series, type FlightSeries } from './c3_series';
+import { hr_to_csv, lr_to_csv, bmi_to_csv, type CsvStream } from './c3_csv';
 import { LOG_FLASH_END, fsm_name, type IndexEntry, type Prologue } from './c3_log_format';
 
 // ---------------------------------------------------------------------------
@@ -249,6 +250,74 @@ export function reveal_bin(): boolean {
   if (!loaded?.bin_path) return false;
   shell.showItemInFolder(loaded.bin_path);
   return true;
+}
+
+/**
+ * Export one stream of one flight as CSV, through a Save dialog.
+ *
+ * Re-decodes rather than caching the last `get_flight_detail` result: the
+ * renderer only ever holds decimated series, and an export must be full
+ * resolution. Decoding one flight out of an in-memory image is fast enough
+ * that caching it would buy nothing but a staleness bug.
+ */
+export async function export_flight_csv(
+  window: BrowserWindow,
+  flight_id: number,
+  stream: CsvStream,
+): Promise<{ ok: boolean; path?: string; rows?: number; cancelled?: boolean; error?: string }> {
+  if (!loaded) return { ok: false, error: 'No flash image loaded.' };
+
+  const i = loaded.index.findIndex((e) => e.flight_id === flight_id);
+  if (i < 0) return { ok: false, error: `Flight ${flight_id} is not in this image's index.` };
+
+  const decoded = decode_flight(
+    loaded.image,
+    loaded.index[i],
+    i + 1 < loaded.index.length ? loaded.index[i + 1] : null,
+    loaded.prologue,
+  );
+
+  // Same rebasing the charts use, so t_s lines up with what was on screen.
+  const t0 =
+    decoded.hr.length > 0
+      ? decoded.hr[0].timestamp_ms
+      : decoded.lr.length > 0
+        ? decoded.lr[0].timestamp_ms
+        : decoded.bmi.length > 0
+          ? decoded.bmi[0].timestamp_ms
+          : 0;
+
+  let csv: string;
+  let rows: number;
+  if (stream === 'hr') {
+    csv = hr_to_csv(decoded.hr, t0);
+    rows = decoded.hr.length;
+  } else if (stream === 'lr') {
+    csv = lr_to_csv(decoded.lr, t0);
+    rows = decoded.lr.length;
+  } else {
+    csv = bmi_to_csv(decoded.bmi, t0);
+    rows = decoded.bmi.length;
+  }
+
+  if (rows === 0) {
+    return { ok: false, error: `Flight ${flight_id} has no ${stream.toUpperCase()} records to export.` };
+  }
+
+  const picked = await dialog.showSaveDialog(window, {
+    title: `Export flight ${flight_id} — ${stream.toUpperCase()} records`,
+    defaultPath: join(default_log_dir(), `casper3_flight${flight_id}_${stream}.csv`),
+    filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+  });
+  if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
+
+  try {
+    mkdirSync(dirname(picked.filePath), { recursive: true });
+    writeFileSync(picked.filePath, csv, 'utf-8');
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  return { ok: true, path: picked.filePath, rows };
 }
 
 export type { DumpProgress };

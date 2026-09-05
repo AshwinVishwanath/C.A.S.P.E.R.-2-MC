@@ -196,6 +196,15 @@ const casper_api = {
     ipcRenderer.send('casper:debrief-cancel')
   },
 
+  /**
+   * Export one stream of one flight as CSV. Opens a Save dialog so the
+   * operator picks the location. Resolves { ok, path, rows } or
+   * { ok: false, cancelled | error }.
+   */
+  debrief_export_csv: (flight_id: number, stream: 'hr' | 'lr' | 'bmi'): Promise<unknown> => {
+    return ipcRenderer.invoke('casper:debrief-export-csv', flight_id, stream)
+  },
+
   /** Subscribe to dump progress. Returns an unsubscribe function. */
   on_debrief_progress: (cb: (progress: unknown) => void): (() => void) => {
     const handler = (_e: unknown, progress: unknown): void => cb(progress)

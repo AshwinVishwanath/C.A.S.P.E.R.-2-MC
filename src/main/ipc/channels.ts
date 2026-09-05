@@ -155,3 +155,7 @@ export const CH_DEBRIEF_REVEAL = 'casper:debrief-reveal';
 
 /** Request cancellation of an in-flight dump (fire-and-forget). */
 export const CH_DEBRIEF_CANCEL = 'casper:debrief-cancel';
+
+/** Export one stream of one flight as CSV through a Save dialog.
+ *  Args: (flight_id: number, stream: 'hr' | 'lr' | 'bmi'). */
+export const CH_DEBRIEF_EXPORT_CSV = 'casper:debrief-export-csv';

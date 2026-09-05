@@ -11,7 +11,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../design/ThemeContext';
-import { Cap, Pill, Panel, Btn, StatTile, Toggle } from '../design/components.jsx';
+import { Cap, Pill, Panel, Btn, StatTile, Toggle, SegToggle } from '../design/components.jsx';
 import { FONT, SPACE, TYPE, RADIUS } from '../design/tokens.js';
 import FlightChart from './debrief/FlightChart.jsx';
 
@@ -42,6 +42,9 @@ export default function DebriefTab({ serial }) {
   const [selected, setSelected] = useState(null); // flight_id
   const [detail, setDetail] = useState(null);
   const [includePrelaunch, setIncludePrelaunch] = useState(false);
+  const [csvStream, setCsvStream] = useState('hr');
+  const [exporting, setExporting] = useState(false);
+  const [exportMsg, setExportMsg] = useState(null);
 
   // Progress subscription lives for the life of the tab: a dump takes minutes
   // and subscribing only while `busy` would race the first event.
@@ -106,6 +109,31 @@ export default function DebriefTab({ serial }) {
   const stats = detail?.series?.stats;
   const groups = detail?.series?.groups ?? [];
   const states = detail?.series?.states ?? [];
+
+  // Picking a different flight invalidates the last export's confirmation.
+  useEffect(() => setExportMsg(null), [selected]);
+
+  const stream_rows = stats
+    ? { hr: stats.hr_count, lr: stats.lr_count, bmi: stats.bmi_count }[csvStream]
+    : 0;
+
+  const on_export = async () => {
+    if (!api?.debrief_export_csv || !stats) return;
+    setExporting(true);
+    setExportMsg(null);
+    try {
+      const res = await api.debrief_export_csv(stats.flight_id, csvStream);
+      if (res?.ok) {
+        setExportMsg(`Saved ${res.rows.toLocaleString()} rows → ${res.path}`);
+      } else if (!res?.cancelled) {
+        setExportMsg(res?.error ?? 'Export failed.');
+      }
+    } catch (err) {
+      setExportMsg(err?.message ?? String(err));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const t_bounds = useMemo(() => {
     let lo = Infinity;
@@ -329,6 +357,51 @@ export default function DebriefTab({ serial }) {
       {/* ---------------------------------------------------------------- */}
       {stats && (
         <Panel title="SUMMARY" right={<Cap>{`FLIGHT ${stats.flight_id}`}</Cap>}>
+          {/* Export. Full resolution, one stream per file — the three streams
+              run at different rates (HR ~400 Hz, BMI up to 400 Hz, LR 10 Hz),
+              so merging them into one sheet would mean inventing alignment
+              between rows that were never sampled together. */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: SPACE.s3,
+              flexWrap: 'wrap',
+              marginBottom: SPACE.s4,
+            }}
+          >
+            <Cap>EXPORT</Cap>
+            <SegToggle
+              size="sm"
+              value={csvStream}
+              onChange={setCsvStream}
+              options={[
+                { id: 'hr', label: `HR ${stats.hr_count.toLocaleString()}` },
+                { id: 'lr', label: `LR ${stats.lr_count.toLocaleString()}` },
+                { id: 'bmi', label: `BMI ${stats.bmi_count.toLocaleString()}` },
+              ]}
+            />
+            <Btn size="sm" onClick={on_export} disabled={exporting || stream_rows === 0}>
+              {exporting ? 'Saving…' : 'Export CSV…'}
+            </Btn>
+            {stream_rows === 0 && (
+              <span style={{ font: `400 ${TYPE.micro}px ${FONT.mono}`, color: T.muted }}>
+                No {csvStream.toUpperCase()} records in this flight.
+              </span>
+            )}
+            {exportMsg && (
+              <span
+                style={{
+                  font: `400 ${TYPE.micro}px ${FONT.mono}`,
+                  color: exportMsg.startsWith('Saved') ? T.success : T.warn,
+                  wordBreak: 'break-all',
+                }}
+              >
+                {exportMsg}
+              </span>
+            )}
+          </div>
+
           <div
             style={{
               display: 'grid',

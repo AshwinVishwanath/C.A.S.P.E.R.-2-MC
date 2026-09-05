@@ -42,7 +42,9 @@ import {
   open_debrief_bin,
   get_flight_detail,
   reveal_bin,
+  export_flight_csv,
 } from '../debrief/debrief_service';
+import type { CsvStream } from '../debrief/c3_csv';
 import type { DumpProgress } from '../debrief/c3_dump_client';
 import { compile_logic_graph } from '../protocol/logic_compiler';
 import type { LogicGraphIR } from '../protocol/logic_program';
@@ -79,6 +81,7 @@ import {
   CH_DEBRIEF_FLIGHT,
   CH_DEBRIEF_REVEAL,
   CH_DEBRIEF_CANCEL,
+  CH_DEBRIEF_EXPORT_CSV,
   CH_SIM_LOAD,
   CH_SIM_PUSH,
   CH_SIM_ACTIVE,
@@ -642,6 +645,17 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
 
   ipcMain.handle(CH_DEBRIEF_REVEAL, async () => ({ ok: reveal_bin() }));
 
+  ipcMain.handle(
+    CH_DEBRIEF_EXPORT_CSV,
+    async (_event, flight_id: number, stream: CsvStream) => {
+      try {
+        return await export_flight_csv(window, flight_id, stream);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
   ipcMain.on(CH_CMD_SIM_FLIGHT, on_sim_flight);
 
   // -----------------------------------------------------------------------
@@ -738,6 +752,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeHandler(CH_DEBRIEF_OPEN);
     ipcMain.removeHandler(CH_DEBRIEF_FLIGHT);
     ipcMain.removeHandler(CH_DEBRIEF_REVEAL);
+    ipcMain.removeHandler(CH_DEBRIEF_EXPORT_CSV);
 
     // Remove fire-and-forget listeners
     ipcMain.removeListener(CH_SCAN_PORTS, on_scan_ports);
