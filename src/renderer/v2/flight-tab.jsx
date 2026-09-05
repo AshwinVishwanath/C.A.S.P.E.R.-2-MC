@@ -3,9 +3,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { TYPE, SPACE, RADIUS, FONT, TRACK, SCHEME_PROPS } from "./tokens.js";
 import { Cap, Pill, Panel, Btn, StatTile, Sparkline, Dot, BigNum } from "./components.jsx";
-import { Radar, Rocket3D, Dial, LiquidShader } from "./instruments.jsx";
+import { Radar, Dial, LiquidShader } from "./instruments.jsx";
 import { fmtMET } from "./sim.jsx";
 import { FLIGHT_CONFIG_DEFAULTS, flightConfigHash, formatMassKg, formatAltM } from "./flight-config.jsx";
+import { AttitudeCard } from "../components/AttitudeCard.jsx";
+import { isValidFix, rangeMeters, bearingDeg } from "../tabs/track/recovery_geo.js";
 
 function FSMBar({ T, current, scheme }) {
   const states = ["PAD", "BOOST", "COAST", "APOGEE", "DROGUE", "MAIN", "LANDED"];
@@ -329,75 +331,11 @@ function LinkHealth({ T, scheme, sim }) {
   );
 }
 
-function RPYGraph({ T, scheme, sim, h = 140, fill = false }) {
-  const sk = SCHEME_PROPS[scheme];
-  const ref = useRef(null);
-  const histRef = useRef([]);
-  useEffect(() => {
-    histRef.current.push({
-      r: sim.quat.roll * 57.296,
-      p: sim.quat.pitch * 57.296,
-      y: sim.quat.yaw * 57.296,
-    });
-    if (histRef.current.length > 200) histRef.current.shift();
-    const c = ref.current; if (!c) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = c.clientWidth, hh = c.clientHeight;
-    c.width = w * dpr; c.height = hh * dpr;
-    const ctx = c.getContext("2d");
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, w, hh);
-    ctx.strokeStyle = T.gridLine; ctx.lineWidth = 1;
-    [0.25, 0.5, 0.75].forEach(f => {
-      ctx.beginPath(); ctx.moveTo(0, hh * f); ctx.lineTo(w, hh * f); ctx.stroke();
-    });
-    ctx.strokeStyle = T.border;
-    ctx.beginPath(); ctx.moveTo(0, hh / 2); ctx.lineTo(w, hh / 2); ctx.stroke();
-    const data = histRef.current;
-    if (data.length < 2) return;
-    const range = 90;
-    const pts = (sel) => data.map((d, i) => [
-      (i / (data.length - 1)) * w,
-      hh / 2 - (Math.max(-range, Math.min(range, sel(d))) / range) * (hh / 2 - 4),
-    ]);
-    const draw = (sel, color) => {
-      ctx.strokeStyle = color; ctx.lineWidth = 1.6;
-      if (sk.showGlow) { ctx.shadowColor = color; ctx.shadowBlur = T.name === "dark" ? 4 : 0; }
-      ctx.beginPath();
-      pts(sel).forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    };
-    draw(d => d.r, T.accent);
-    draw(d => d.p, T.info);
-    draw(d => d.y, T.warn);
-  }, [sim.quat, T, sk.showGlow]);
-  const Legend = ({ color, label, value }) => (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-      <span style={{ width: 8, height: 8, borderRadius: 2, background: color, boxShadow: sk.showGlow ? `0 0 6px ${color}` : "none", display: "inline-block" }}/>
-      <span style={{ fontFamily: FONT.cond, fontSize: 10, color: T.muted, letterSpacing: "0.16em", fontWeight: 700 }}>{label}</span>
-      <span style={{ fontFamily: FONT.mono, fontSize: 12, fontWeight: 700, color: T.strong, fontVariantNumeric: "tabular-nums" }}>{value}°</span>
-    </div>
-  );
-  return (
-    <div style={fill
-      ? { position: "relative", display: "flex", flexDirection: "column", height: "100%", width: "100%" }
-      : { position: "relative" }}>
-      <div style={{ display: "flex", gap: SPACE.s3, marginBottom: 6, flexShrink: 0 }}>
-        <Legend color={T.accent} label="ROLL"  value={(sim.quat.roll * 57.296).toFixed(1)}/>
-        <Legend color={T.info}   label="PITCH" value={(sim.quat.pitch * 57.296).toFixed(1)}/>
-        <Legend color={T.warn}   label="YAW"   value={(sim.quat.yaw * 57.296).toFixed(1)}/>
-      </div>
-      <canvas ref={ref} style={fill
-        ? { width: "100%", flex: 1, minHeight: 0, display: "block" }
-        : { width: "100%", height: h, display: "block" }}/>
-      <div style={{ position: "absolute", left: 0, top: 22, fontFamily: FONT.mono, fontSize: 9, color: T.faint, pointerEvents: "none" }}>+90°</div>
-      <div style={{ position: "absolute", left: 0, bottom: 0, fontFamily: FONT.mono, fontSize: 9, color: T.faint, pointerEvents: "none" }}>-90°</div>
-    </div>
-  );
-}
+// RPYGraph (roll/pitch/yaw strip chart driven by a synthetic Euler-based
+// quaternion reconstructed from FC degrees) removed with the old attitude
+// display below -- see AttitudeCard.
 
-export default function FlightTab({ T, sim, scheme, motion, flightConfig = FLIGHT_CONFIG_DEFAULTS, commands = {}, checklist }) {
+export default function FlightTab({ T, sim, rawTel, scheme, motion, flightConfig = FLIGHT_CONFIG_DEFAULTS, commands = {}, checklist }) {
   const sk = SCHEME_PROPS[scheme];
   const [imperial, setImperial] = useState(false);
   const [trajectoryView, setTrajectoryView] = useState(scheme === "instrument" ? "dials" : "graph");
@@ -405,6 +343,23 @@ export default function FlightTab({ T, sim, scheme, motion, flightConfig = FLIGH
     setTrajectoryView(scheme === "instrument" ? "dials" : "graph");
   }, [scheme]);
   const events = useEventLog(sim);
+
+  // Launch/pad reference for the GPS LOCK panel's Δ-FROM-PAD and
+  // BEARING-TO-PAD readouts: latched from the first valid fix this session,
+  // mirroring GroundTrack.jsx's own launch latch (TrackTab's recovery
+  // panel) -- there is no transmitted pad-origin field on the wire (GPS
+  // downlink is absolute-only, see TrackTab.jsx), so a hardcoded coordinate
+  // is the only other option, and that was a real bug: this panel used to
+  // hard-code the SF Bay Area (the design-preview sim's fixed launch site)
+  // and compare a REAL fix against it once rawTel started feeding this tab
+  // live telemetry, producing a multi-thousand-km "distance from pad" the
+  // instant a real GPS fix came in anywhere else on Earth.
+  const padRef = useRef(null);
+  useEffect(() => {
+    if (!padRef.current && isValidFix(sim.gpsFix, sim.gpsLat, sim.gpsLon)) {
+      padRef.current = { lat: sim.gpsLat, lon: sim.gpsLon };
+    }
+  }, [sim.gpsFix, sim.gpsLat, sim.gpsLon]);
   const altU = imperial ? "ft" : "m";
   const altVal = (m) => imperial ? m * 3.28084 : m;
   const velU = imperial ? "ft/s" : "m/s";
@@ -584,16 +539,12 @@ export default function FlightTab({ T, sim, scheme, motion, flightConfig = FLIGH
           )}
         </Panel>
 
-        <Panel T={T} scheme={scheme} title="ATTITUDE · QUATERNION" padded={false}>
-          <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 540 }}>
-            <div style={{ flex: "0 0 75%", display: "flex", alignItems: "center", justifyContent: "center", padding: SPACE.s2 }}>
-              <Rocket3D T={T} size={300} quat={sim.quat} motion={motion} scheme={scheme}/>
-            </div>
-            <div style={{ flex: "0 0 25%", borderTop: `1px solid ${T.border}`, padding: SPACE.s3, display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <RPYGraph T={T} scheme={scheme} sim={sim} fill/>
-            </div>
-          </div>
-        </Panel>
+        {/* Same attitude display as the Track tab (design/components.jsx
+            Panel, not this file's v2 Panel) -- real FC quaternion, roll +
+            tilt, pad-gated upright tare. Resized to fit this grid slot.
+            showGraphs restores the roll/tilt strip charts that lived here
+            before (was roll/pitch/yaw, driven by a synthetic quaternion). */}
+        <AttitudeCard t={rawTel} size={280} showGraphs />
 
         <div style={{ display: "flex", flexDirection: "column", gap: SPACE.s3 }}>
           <Panel T={T} scheme={scheme} title="PRE-FLIGHT" right={
@@ -607,18 +558,15 @@ export default function FlightTab({ T, sim, scheme, motion, flightConfig = FLIGH
             <Pill T={T} dot color={sim.gpsFix === "3D" ? T.accent : sim.gpsFix === "2D" ? T.warn : T.danger} size="sm">{sim.gpsFix} · {sim.gpsSats} SATS</Pill>
           } style={{ flex: 1 }}>
             {(() => {
-              // sim.gpsLat/gpsLon are absolute WGS84 degrees (see v2/sim.jsx),
-              // matching the real FC_MSG_GPS wire contract. This is a design-preview
-              // sim fixture with no transmitted pad/ground reference, so the "distance
-              // / bearing to pad" readout approximates the pad as the sim's nominal
-              // launch-site coordinate and applies the standard flat-earth conversion
-              // (metres-per-degree-longitude scales by cos(latitude)).
-              const PAD_LAT_SIM = 37.77492;
-              const PAD_LON_SIM = -122.4194;
-              const dyM = (sim.gpsLat - PAD_LAT_SIM) * 111320;
-              const dxM = (sim.gpsLon - PAD_LON_SIM) * 111320 * Math.cos(PAD_LAT_SIM * Math.PI / 180);
-              const distM = Math.hypot(dxM, dyM);
-              const bearing = (Math.atan2(dxM, dyM) * 180 / Math.PI + 360) % 360;
+              // sim.gpsLat/gpsLon are absolute WGS84 degrees (see v2/sim.jsx and,
+              // for live telemetry, FlightTabV2.jsx), matching the real FC_MSG_GPS
+              // wire contract. There is no transmitted pad/ground reference (GPS
+              // downlink is absolute-only) so "distance/bearing to pad" is measured
+              // from padRef above -- the first valid fix latched this session, same
+              // pattern as GroundTrack.jsx's own launch latch.
+              const havePad = !!padRef.current;
+              const distM = havePad ? rangeMeters(padRef.current.lat, padRef.current.lon, sim.gpsLat, sim.gpsLon) : 0;
+              const bearing = havePad ? bearingDeg(padRef.current.lat, padRef.current.lon, sim.gpsLat, sim.gpsLon) : 0;
               const fixQuality = sim.gpsFix === "3D" ? "EXCELLENT" : sim.gpsFix === "2D" ? "DEGRADED" : "NO FIX";
               const fixColor = sim.gpsFix === "3D" ? T.accent : sim.gpsFix === "2D" ? T.warn : T.danger;
               return (
@@ -646,12 +594,14 @@ export default function FlightTab({ T, sim, scheme, motion, flightConfig = FLIGH
                     </div>
                     <div>
                       <Cap T={T}>Δ FROM PAD</Cap>
-                      <div style={{ fontFamily: FONT.mono, fontSize: 18, fontWeight: 700, color: T.strong, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{distM.toFixed(1)} m</div>
+                      <div style={{ fontFamily: FONT.mono, fontSize: 18, fontWeight: 700, color: havePad ? T.strong : T.muted, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{havePad ? `${distM.toFixed(1)} m` : "—"}</div>
                     </div>
                   </div>
                   <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: SPACE.s3, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                     <Cap T={T}>BEARING TO PAD</Cap>
-                    <span style={{ fontFamily: FONT.mono, fontSize: 13, fontWeight: 700, color: T.strong, fontVariantNumeric: "tabular-nums" }}>{bearing.toFixed(0)}° · {(distM / 1000).toFixed(2)} km</span>
+                    <span style={{ fontFamily: FONT.mono, fontSize: 13, fontWeight: 700, color: havePad ? T.strong : T.muted, fontVariantNumeric: "tabular-nums" }}>
+                      {havePad ? `${bearing.toFixed(0)}° · ${(distM / 1000).toFixed(2)} km` : "AWAITING PAD FIX"}
+                    </span>
                   </div>
                 </>
               );

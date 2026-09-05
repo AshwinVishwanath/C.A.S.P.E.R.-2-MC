@@ -39,8 +39,6 @@ const PHASE_MAP = {
 };
 const V2_FSM = ['PAD', 'BOOST', 'COAST', 'APOGEE', 'DROGUE', 'MAIN', 'LANDED'];
 
-const DEG2RAD = Math.PI / 180;
-
 // Mirror the auto-accent resolution v2's own index.jsx uses.
 function resolveAccent(accent, mode) {
   if (accent && accent !== 'auto') return accent;
@@ -155,13 +153,6 @@ export default function FlightTabV2({ tel, cmd, serial, flightSim, tweaks }) {
     batt: t.batt || 0,
     temp: 0, // FC does not expose board temp yet — placeholder
 
-    // v2 treats `quat` as an euler triple in RADIANS; v1 telemetry is degrees.
-    quat: {
-      roll: (t.roll || 0) * DEG2RAD,
-      pitch: (t.pitch || 0) * DEG2RAD,
-      yaw: (t.yaw || 0) * DEG2RAD,
-    },
-
     pyro: mapPyro(t.pyro),
   };
 
@@ -169,6 +160,7 @@ export default function FlightTabV2({ tel, cmd, serial, flightSim, tweaks }) {
     <V2FlightTab
       T={T}
       sim={sim}
+      rawTel={t}
       scheme={tweaks.scheme}
       motion={tweaks.motion}
       flightConfig={flightConfig}
