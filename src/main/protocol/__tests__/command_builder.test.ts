@@ -12,6 +12,7 @@ import {
   build_confirm,
   build_abort,
   build_testmode,
+  build_gpsdiag,
   build_config_upload,
   build_logic_upload,
   generate_nonce
@@ -21,6 +22,10 @@ import {
   MSG_ID_CMD_ARM,
   MSG_ID_CMD_FIRE,
   MSG_ID_CMD_TESTMODE,
+  MSG_ID_CMD_GPSDIAG,
+  SIZE_CMD_GPSDIAG,
+  GD_ACT_REPORT,
+  GD_ACT_LNA_BYPASS,
   MSG_ID_CONFIRM,
   MSG_ID_ABORT,
   MSG_ID_CMD_CONFIG,
@@ -352,5 +357,47 @@ describe('generate_nonce', () => {
     }
     // With 65536 possible values, 100 calls should yield at least 90 unique
     expect(nonces.size).toBeGreaterThan(50);
+  });
+});
+
+describe('build_gpsdiag', () => {
+  it('produces an 11-byte packet with the right header', () => {
+    const pkt = build_gpsdiag(GD_ACT_REPORT, 0x1234);
+    expect(pkt.length).toBe(SIZE_CMD_GPSDIAG);
+    expect(pkt.length).toBe(11);
+    expect(pkt[0]).toBe(MSG_ID_CMD_GPSDIAG);
+    expect(pkt[0]).toBe(0x86);
+    expect(pkt[1]).toBe(MAGIC_1);
+    expect(pkt[2]).toBe(MAGIC_2);
+  });
+
+  it('writes the nonce little-endian', () => {
+    const pkt = build_gpsdiag(GD_ACT_REPORT, 0xBEEF);
+    expect(pkt[3]).toBe(0xEF);
+    expect(pkt[4]).toBe(0xBE);
+  });
+
+  it('writes act and its exact bitwise complement', () => {
+    for (const act of [0, 1, 2, 3]) {
+      const pkt = build_gpsdiag(act, 1);
+      expect(pkt[5]).toBe(act);
+      // The FC validates (act ^ ~act) === 0xFF and drops the frame otherwise,
+      // so this is the check that makes a single flipped bit in the one field
+      // that decides behaviour non-actionable rather than silently wrong.
+      expect(pkt[5] ^ pkt[6]).toBe(0xFF);
+    }
+  });
+
+  it('places CRC-32 over bytes 0..6 in the last four bytes', () => {
+    const pkt = build_gpsdiag(GD_ACT_LNA_BYPASS, 0x0042);
+    const expected = crc32_compute(pkt.subarray(0, 7));
+    const actual = pkt[7] | (pkt[8] << 8) | (pkt[9] << 16) | (pkt[10] << 24);
+    expect(actual >>> 0).toBe(expected >>> 0);
+  });
+
+  it('masks act to one byte', () => {
+    const pkt = build_gpsdiag(0x1FF, 1);
+    expect(pkt[5]).toBe(0xFF);
+    expect(pkt[5] ^ pkt[6]).toBe(0xFF);
   });
 });

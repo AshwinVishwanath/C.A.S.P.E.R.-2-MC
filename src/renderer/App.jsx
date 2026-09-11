@@ -25,6 +25,7 @@ import TestTab from './tabs/TestTab.jsx';
 import TrackTab from './tabs/TrackTab.jsx';
 import SetupTab from './tabs/SetupTab.jsx';
 import DebriefTab from './tabs/DebriefTab.jsx';
+import GpsTab from './tabs/GpsTab.jsx';
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -41,6 +42,7 @@ const TABS = [
   // { id: 'test',     label: 'TEST',   icon: 'test'   },
   { id: 'flight',   label: 'FLIGHT', icon: 'flight' },
   { id: 'tracking', label: 'TRACK',  icon: 'track'  },
+  { id: 'gps',      label: 'GPS',    icon: 'satellite' },
   { id: 'debrief',  label: 'DEBRIEF', icon: 'graph' },
 ];
 
@@ -134,6 +136,7 @@ function Shell({ tweaks, setTweak, telemetry, serial, command, diag, flightSim }
           {activeTab === 'test'     && <TestTab tel={telemetry} diag={diag} cmd={command} />}
           {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} flightSim={flightSim} tweaks={tweaks} />}
           {activeTab === 'tracking' && <TrackTab tel={telemetry} serial={serial} />}
+          {activeTab === 'gps'      && <GpsTab />}
           {activeTab === 'debrief'  && <DebriefTab serial={serial} />}
         </main>
       </div>

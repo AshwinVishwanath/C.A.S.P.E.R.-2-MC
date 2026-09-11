@@ -61,6 +61,40 @@ export const MSG_ID_CONFIRM = 0xF0;
 /** ABORT — CAC abort. */
 export const MSG_ID_ABORT = 0xF1;
 
+/**
+ * CMD_GPSDIAG — GPS RF diagnostics (MC -> FC), Casper-3 only.
+ *
+ * Exists because the outdoor GPS test site is battery-powered with no USB
+ * host: the FC's equivalent console commands live in a CDC_STREAM==2 build
+ * and the build that flies is CDC_STREAM==1, so over the radio is the only
+ * way to reach these numbers where they have to be measured.
+ *
+ * Single-shot, no CONFIRM handshake -- it is read-mostly, and its one
+ * mutating action (internal LNA gain mode) cannot actuate anything. The FC
+ * refuses it off the ground: servicing one runs two blocking UBX polls of up
+ * to 500 ms each.
+ */
+export const MSG_ID_CMD_GPSDIAG = 0x86;
+
+/** ACK_GPSDIAG — carries the measurement, not merely an acknowledgement. */
+export const MSG_ID_ACK_GPSDIAG = 0xA7;
+
+/** CMD_GPSDIAG ACT byte. */
+export const GD_ACT_REPORT = 0x00;
+export const GD_ACT_LNA_NORMAL = 0x01;
+export const GD_ACT_LNA_LOW = 0x02;
+export const GD_ACT_LNA_BYPASS = 0x03;
+
+/** ACK_GPSDIAG FLAGS bits. */
+export const GD_FLAG_TTFF_VALID = 0x01;
+export const GD_FLAG_SAT_VALID = 0x02;
+export const GD_FLAG_RF_VALID = 0x04;
+export const GD_FLAG_GPS_ALIVE = 0x08;
+export const GD_FLAG_LNA_SHIFT = 4;
+export const GD_FLAG_LNA_MASK = 0x30;
+export const GD_FLAG_ANTPWR_SHIFT = 6;
+export const GD_FLAG_ANTPWR_MASK = 0xC0;
+
 /** CMD_TESTMODE — toggle test mode (PAD state only). */
 export const MSG_ID_CMD_TESTMODE = 0x82;
 
@@ -155,6 +189,31 @@ export const SIZE_GS_MSG_STATUS = 24;
 
 /** CMD_ARM packet size. Total: 12 bytes. */
 export const SIZE_CMD_ARM = 12;
+
+/** CMD_GPSDIAG packet size. [ID:1][MAG:2][NONCE:2][ACT:1][~ACT:1][CRC:4] = 11. */
+export const SIZE_CMD_GPSDIAG = 11;
+
+/**
+ * ACK_GPSDIAG packet size. Counted field by field against the FC's
+ * tlm_types.h -- do not adjust one side without the other:
+ *   [ID:1][NONCE:2][ACT:1][FIX:1][SV:1][TRACKED:1][USED:1][CNOBEST:1]
+ *   [CNOMEAN:1][GE30:1][AGC:2][NOISE:2][JAM:1][TTFF_DS:2][FLAGS:1][CRC:4]
+ *   [CNOMEAN:1][GE30:1][AGC:2][NOISE:2][JAM:1][TTFF_DS:2][FLAGS:1][DIAG:1][CRC:4]
+ *    1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 2 + 1 + 2 + 1 + 1 + 4 = 24
+ */
+export const SIZE_ACK_GPSDIAG = 24;
+
+/**
+ * ACK_GPSDIAG DIAG byte (offset 19) — why a poll failed, when one did.
+ * Added after NAV-SAT failed twice on hardware: sat_valid alone cannot tell
+ * "the config key is wrong" from "the key is accepted and the message still
+ * is not emitted", and those have different fixes.
+ */
+export const GD_DIAG_SAT_CFG_ACK = 0x01;
+export const GD_DIAG_SAT_CFG_NAK = 0x02;
+export const GD_DIAG_SAT_POLLED = 0x04;
+export const GD_DIAG_RF_FIRST = 0x08;
+export const GD_DIAG_RF_RETRY = 0x10;
 
 /** CMD_FIRE packet size. Total: 13 bytes. */
 export const SIZE_CMD_FIRE = 13;

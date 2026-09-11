@@ -107,6 +107,13 @@ function wire_gs_pipeline(): void {
         }
         store.update_from_gs_status(msg.data)
         break
+      case 'ack_gpsdiag':
+        if (!msg.data.crc_ok) {
+          console.warn('[LINK] CRC mismatch on ACK_GPSDIAG — dropping')
+          break
+        }
+        emit_gpsdiag(msg.data)
+        break
       case 'ack_arm':
       case 'ack_fire':
       case 'nack':
@@ -114,6 +121,22 @@ function wire_gs_pipeline(): void {
         break
     }
   })
+}
+
+
+/**
+ * Push a parsed ACK_GPSDIAG to the renderer.
+ *
+ * Deliberately NOT routed through CacMachine: CMD_GPSDIAG is single-shot with
+ * no CONFIRM phase, so it has no command lifecycle for that state machine to
+ * track. It also does not enter the telemetry store -- these are operator-
+ * requested spot measurements, not a stream, and storing them would imply a
+ * freshness they do not have.
+ */
+function emit_gpsdiag(data: unknown): void {
+  if (main_window && !main_window.isDestroyed()) {
+    main_window.webContents.send('casper:gpsdiag-update', data)
+  }
 }
 
 /**
@@ -156,6 +179,13 @@ function wire_fc_pipeline(): void {
           console.warn('[FC] CRC mismatch on FC_MSG_EVENT')
         }
         store.update_from_event(msg.data)
+        break
+      case 'ack_gpsdiag':
+        if (!msg.data.crc_ok) {
+          console.warn('[LINK] CRC mismatch on ACK_GPSDIAG — dropping')
+          break
+        }
+        emit_gpsdiag(msg.data)
         break
       case 'ack_arm':
       case 'ack_fire':

@@ -25,7 +25,9 @@ import {
   SIZE_CMD_ARM,
   SIZE_CMD_FIRE,
   SIZE_CONFIRM,
-  SIZE_ABORT
+  SIZE_ABORT,
+  MSG_ID_CMD_GPSDIAG,
+  SIZE_CMD_GPSDIAG
 } from './constants';
 import { crc32_compute } from './crc32';
 
@@ -164,6 +166,43 @@ export function build_confirm(nonce: number): Uint8Array {
   // CRC over bytes [0..4]
   const crc = crc32_compute(buf.subarray(0, 5));
   write_u32_le(buf, 5, crc);
+
+  return buf;
+}
+
+/**
+ * Build CMD_GPSDIAG packet (11 bytes).
+ *
+ * Layout:
+ *   [0]    msg_id (0x86)
+ *   [1]    MAGIC_1 (0xCA)
+ *   [2]    MAGIC_2 (0x5A)
+ *   [3-4]  nonce (u16, LE)
+ *   [5]    act (GD_ACT_*)
+ *   [6]    ~act (bitwise complement, byte-level integrity check)
+ *   [7-10] CRC-32 over bytes [0..6]
+ *
+ * Byte-complement AND CRC, matching CMD_GNDTEST: the complement catches a
+ * single flipped bit in the one field that decides what the FC does, before
+ * the CRC is even consulted. The FC re-validates both.
+ *
+ * @param act - GD_ACT_REPORT, or one of the GD_ACT_LNA_* modes.
+ * @param nonce - Transaction nonce.
+ * @returns 11-byte CMD_GPSDIAG packet.
+ */
+export function build_gpsdiag(act: number, nonce: number): Uint8Array {
+  const buf = new Uint8Array(SIZE_CMD_GPSDIAG);
+
+  buf[0] = MSG_ID_CMD_GPSDIAG;
+  buf[1] = MAGIC_1;
+  buf[2] = MAGIC_2;
+  write_u16_le(buf, 3, nonce & 0xFFFF);
+  buf[5] = act & 0xFF;
+  buf[6] = (~act) & 0xFF;
+
+  // CRC over bytes [0..6]
+  const crc = crc32_compute(buf.subarray(0, 7));
+  write_u32_le(buf, 7, crc);
 
   return buf;
 }

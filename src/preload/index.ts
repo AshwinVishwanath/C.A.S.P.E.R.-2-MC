@@ -116,6 +116,27 @@ const casper_api = {
   },
 
   /**
+   * Request GPS RF diagnostics from the FC (CMD_GPSDIAG, 0x86).
+   *
+   * act: 0 = report only, 1/2/3 = set internal LNA gain to normal/low/bypass
+   * and then report. Sent over the ground station when one is connected,
+   * which is the point -- the field test site has no USB host.
+   *
+   * Setting an LNA mode restarts GNSS acquisition on the receiver and re-arms
+   * its TTFF stopwatch.
+   */
+  cmd_gpsdiag: (act: number): void => {
+    ipcRenderer.send('casper:cmd-gpsdiag', act)
+  },
+
+  /** Subscribe to ACK_GPSDIAG replies. Returns an unsubscribe function. */
+  on_gpsdiag_update: (cb: (data: unknown) => void): (() => void) => {
+    const listener = (_e: unknown, data: unknown): void => cb(data)
+    ipcRenderer.on('casper:gpsdiag-update', listener)
+    return () => ipcRenderer.removeListener('casper:gpsdiag-update', listener)
+  },
+
+  /**
    * Upload a logic graph to the FC.
    *
    * Compiles the graph in the main process and, if the FC is connected,

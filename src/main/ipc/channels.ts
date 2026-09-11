@@ -123,6 +123,17 @@ export const CH_ERASE_LOG = 'casper:erase-flight-log';
 /** Start a simulated flight on the FC. */
 export const CH_CMD_SIM_FLIGHT = 'casper:cmd-sim-flight';
 
+/**
+ * CMD_GPSDIAG — GPS RF diagnostics request (renderer -> main -> GS -> FC).
+ * Payload: the GD_ACT_* byte. Routed over the ground station when one is
+ * connected, because the whole point of this command is reaching a
+ * battery-powered board at a field site with no USB host.
+ */
+export const CH_CMD_GPSDIAG = 'casper:cmd-gpsdiag';
+
+/** ACK_GPSDIAG pushed from main to renderer when the FC answers. */
+export const CH_GPSDIAG_UPDATE = 'casper:gpsdiag-update';
+
 /** Upload a compiled Logic VM program to the FC. Args: (graph: LogicGraphIR). */
 export const CH_UPLOAD_LOGIC = 'casper:upload-logic';
 

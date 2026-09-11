@@ -265,6 +265,70 @@ export interface GsMsgCorrupt {
 // ---------------------------------------------------------------------------
 
 /** ACK_ARM — arm/disarm acknowledgement (msg_id 0xA0). */
+/**
+ * ACK_GPSDIAG (0xA7) — the FC's answer to CMD_GPSDIAG, carrying the GPS RF
+ * measurement rather than a bare acknowledgement.
+ *
+ * Reading these together is what makes them useful, because NAV-PVT alone
+ * cannot distinguish the three cases that matter:
+ *   tracked=0, cno_best=0    nothing is reaching the receiver — RF fault
+ *                            (antenna, connector, bias, FEM).
+ *   tracked>=6, cno_best>=35 healthy signal, acquisition unfinished. Normal:
+ *                            this board has no GPS backup cell, so every
+ *                            power-up is a genuine cold start.
+ *   tracked>=6, cno_best<30  tracked but desensitised — the documented
+ *                            on-board interference problem.
+ */
+export interface AckGpsDiag {
+  msg_id: number;
+  /** Echoed nonce from the CMD_GPSDIAG. */
+  nonce: number;
+  /** Echoed ACT byte (GD_ACT_*). */
+  act: number;
+  /** NAV-PVT fixType: 0 none, 2 = 2D, 3 = 3D. */
+  fix_type: number;
+  /** NAV-PVT satellites used in the solution. */
+  num_sv: number;
+  /** NAV-SAT satellites with C/N0 > 0. */
+  tracked: number;
+  /** NAV-SAT satellites flagged svUsed. */
+  used: number;
+  /** Strongest C/N0, dB-Hz. */
+  cno_best: number;
+  /** Mean C/N0 over tracked satellites, dB-Hz. */
+  cno_mean: number;
+  /** Satellites at C/N0 >= 30 dB-Hz. */
+  ge30: number;
+  /** MON-RF AGC count, 0..8191. */
+  agc: number;
+  /** MON-RF noisePerMS. */
+  noise: number;
+  /** MON-RF jamming indicator, 0..255. */
+  jam: number;
+  /** Seconds to first 3D fix. Only meaningful when ttff_valid. */
+  ttff_s: number;
+  /** True once a 3D fix has landed since the receiver was last started. */
+  ttff_valid: boolean;
+  /** True if the NAV-SAT poll answered. */
+  sat_valid: boolean;
+  /** True if the MON-RF poll answered. */
+  rf_valid: boolean;
+  /** True if the receiver ACKed on I2C at init. */
+  gps_alive: boolean;
+  /** Internal LNA gain mode: 0 normal, 1 low-gain, 2 bypass. */
+  lna_mode: number;
+  /** MON-RF antPower: 0 OFF, 1 ON, 2 DONTKNOW (expected here). */
+  ant_power: number;
+  /** Raw DIAG byte (GD_DIAG_* bits): why a poll failed, when one did. */
+  diag: number;
+  /** The NAV-SAT enable VALSET was ACKed by the receiver. */
+  sat_cfg_ack: boolean;
+  /** The NAV-SAT enable VALSET was NAKed — the key is wrong or unsupported. */
+  sat_cfg_nak: boolean;
+  /** True if CRC verified OK. */
+  crc_ok: boolean;
+}
+
 export interface AckArm {
   msg_id: number;
   /** Echoed nonce from the original ARM command. */
@@ -363,6 +427,7 @@ export type ParsedMessage =
   | { type: 'gs_status'; data: GsMsgStatus }
   | { type: 'gs_corrupt'; data: GsMsgCorrupt }
   | { type: 'ack_arm'; data: AckArm }
+  | { type: 'ack_gpsdiag'; data: AckGpsDiag }
   | { type: 'ack_fire'; data: AckFire }
   | { type: 'ack_config'; data: AckConfig }
   | { type: 'ack_logic'; data: AckLogic }

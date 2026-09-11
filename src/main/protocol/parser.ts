@@ -19,6 +19,7 @@ import {
   GsMsgTelem,
   GsMsgStatus,
   AckArm,
+  AckGpsDiag,
   AckFire,
   AckConfig,
   AckLogic,
@@ -36,6 +37,18 @@ import {
   MSG_ID_GS_STATUS,
   MSG_ID_GS_CORRUPT,
   MSG_ID_ACK_ARM,
+  MSG_ID_ACK_GPSDIAG,
+  SIZE_ACK_GPSDIAG,
+  GD_FLAG_TTFF_VALID,
+  GD_FLAG_SAT_VALID,
+  GD_FLAG_RF_VALID,
+  GD_FLAG_GPS_ALIVE,
+  GD_FLAG_LNA_SHIFT,
+  GD_FLAG_LNA_MASK,
+  GD_FLAG_ANTPWR_SHIFT,
+  GD_FLAG_ANTPWR_MASK,
+  GD_DIAG_SAT_CFG_ACK,
+  GD_DIAG_SAT_CFG_NAK,
   MSG_ID_ACK_FIRE,
   MSG_ID_ACK_CONFIG,
   MSG_ID_ACK_LOGIC,
@@ -190,6 +203,9 @@ export function parse_packet(
         ok: true,
         message: { type: 'gs_corrupt', data: { msg_id, raw: payload } }
       };
+
+    case MSG_ID_ACK_GPSDIAG:
+      return parse_ack_gpsdiag(payload);
 
     case MSG_ID_ACK_ARM:
       return parse_ack_arm(payload);
@@ -572,6 +588,69 @@ function parse_ack_arm(payload: Uint8Array): ParseResult {
   };
 
   return { ok: true, message: { type: 'ack_arm', data } };
+}
+
+// ---------------------------------------------------------------------------
+// ACK_GPSDIAG parser (msg_id 0xA7, 23 bytes)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse ACK_GPSDIAG packet.
+ *
+ * Layout (23 bytes total), matching flight/telemetry/tlm_types.h:
+ *   [0]     msg_id (0xA7)
+ *   [1-2]   nonce (u16, LE)
+ *   [3]     act (echoed GD_ACT_*)
+ *   [4]     fix_type      [5]  num_sv     [6]  tracked   [7] used
+ *   [8]     cno_best      [9]  cno_mean   [10] ge30
+ *   [11-12] agc (u16 LE)  [13-14] noise (u16 LE)  [15] jam
+ *   [16-17] ttff, DECISECONDS (u16 LE)
+ *   [18]    flags (GD_FLAG_*)
+ *   [19]    diag  (GD_DIAG_*)
+ *   [20-23] CRC-32 (u32, LE)
+ */
+function parse_ack_gpsdiag(payload: Uint8Array): ParseResult {
+  if (payload.length < SIZE_ACK_GPSDIAG) {
+    return {
+      ok: false,
+      error: `ACK_GPSDIAG too short: ${payload.length} < ${SIZE_ACK_GPSDIAG}`,
+      msg_id: MSG_ID_ACK_GPSDIAG
+    };
+  }
+
+  const crc_ok = verify_packet_crc(payload);
+  const flags = payload[18];
+
+  const data: AckGpsDiag = {
+    msg_id: MSG_ID_ACK_GPSDIAG,
+    nonce: read_u16_le(payload, 1),
+    act: payload[3],
+    fix_type: payload[4],
+    num_sv: payload[5],
+    tracked: payload[6],
+    used: payload[7],
+    cno_best: payload[8],
+    cno_mean: payload[9],
+    ge30: payload[10],
+    agc: read_u16_le(payload, 11),
+    noise: read_u16_le(payload, 13),
+    jam: payload[15],
+    // Wire units are deciseconds; present seconds, which is what an operator
+    // compares against the ~26-30 s a clean cold start should take.
+    ttff_s: read_u16_le(payload, 16) / 10,
+    ttff_valid: (flags & GD_FLAG_TTFF_VALID) !== 0,
+    sat_valid: (flags & GD_FLAG_SAT_VALID) !== 0,
+    rf_valid: (flags & GD_FLAG_RF_VALID) !== 0,
+    gps_alive: (flags & GD_FLAG_GPS_ALIVE) !== 0,
+    lna_mode: (flags & GD_FLAG_LNA_MASK) >> GD_FLAG_LNA_SHIFT,
+    ant_power: (flags & GD_FLAG_ANTPWR_MASK) >> GD_FLAG_ANTPWR_SHIFT,
+    diag: payload[19],
+    sat_cfg_ack: (payload[19] & GD_DIAG_SAT_CFG_ACK) !== 0,
+    sat_cfg_nak: (payload[19] & GD_DIAG_SAT_CFG_NAK) !== 0,
+    crc_ok
+  };
+
+  return { ok: true, message: { type: 'ack_gpsdiag', data } };
 }
 
 // ---------------------------------------------------------------------------

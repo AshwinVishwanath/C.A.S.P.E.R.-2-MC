@@ -18,6 +18,8 @@ import {
   MSG_ID_GS_TELEM,
   MSG_ID_GS_STATUS,
   MSG_ID_ACK_ARM,
+  MSG_ID_ACK_GPSDIAG,
+  SIZE_ACK_GPSDIAG,
   MSG_ID_ACK_CONFIG,
   MSG_ID_ACK_LOGIC,
   MSG_ID_NACK,
@@ -936,5 +938,119 @@ describe('parse CONFIRM', () => {
 
     expect(result.message.data.nonce).toBe(0xABCD);
     expect(result.message.data.crc_ok).toBe(true);
+  });
+});
+
+describe('ACK_GPSDIAG (0xA7)', () => {
+  /**
+   * Build a 23-byte ACK_GPSDIAG with a real CRC. Field offsets mirror the
+   * FC's cac_send_gpsdiag_ack() byte for byte -- if these two ever disagree
+   * the packet decodes into plausible nonsense rather than failing loudly,
+   * which is exactly what this fixture is here to prevent.
+   */
+  function make_ack(over: Partial<{
+    nonce: number; act: number; fix: number; sv: number; tracked: number;
+    used: number; cno_best: number; cno_mean: number; ge30: number;
+    agc: number; noise: number; jam: number; ttff_ds: number; flags: number;
+  }> = {}): Uint8Array {
+    const f = {
+      nonce: 0x1234, act: 0, fix: 3, sv: 7, tracked: 9, used: 7,
+      cno_best: 42, cno_mean: 33, ge30: 6, agc: 2600, noise: 88, jam: 12,
+      ttff_ds: 312, flags: 0x0F, diag: 0x0C, ...over
+    };
+    const p = new Uint8Array(SIZE_ACK_GPSDIAG);
+    p[0] = MSG_ID_ACK_GPSDIAG;
+    p[1] = f.nonce & 0xFF; p[2] = (f.nonce >> 8) & 0xFF;
+    p[3] = f.act; p[4] = f.fix; p[5] = f.sv; p[6] = f.tracked; p[7] = f.used;
+    p[8] = f.cno_best; p[9] = f.cno_mean; p[10] = f.ge30;
+    p[11] = f.agc & 0xFF; p[12] = (f.agc >> 8) & 0xFF;
+    p[13] = f.noise & 0xFF; p[14] = (f.noise >> 8) & 0xFF;
+    p[15] = f.jam;
+    p[16] = f.ttff_ds & 0xFF; p[17] = (f.ttff_ds >> 8) & 0xFF;
+    p[18] = f.flags;
+    p[19] = f.diag;
+    const crc = crc32_compute(p.subarray(0, 20));
+    p[20] = crc & 0xFF; p[21] = (crc >>> 8) & 0xFF;
+    p[22] = (crc >>> 16) & 0xFF; p[23] = (crc >>> 24) & 0xFF;
+    return p;
+  }
+
+  it('is exactly 24 bytes', () => {
+    expect(SIZE_ACK_GPSDIAG).toBe(24);
+    expect(make_ack().length).toBe(24);
+  });
+
+  it('decodes the diag byte that attributes a failed poll', () => {
+    // NAK set, ACK clear: the receiver rejected the NAV-SAT enable, which is
+    // the signature of a wrong or unsupported config key.
+    const r = parse_packet(make_ack({ diag: 0x02 }));
+    if (!r.ok || r.message.type !== 'ack_gpsdiag') throw new Error('wrong type');
+    expect(r.message.data.sat_cfg_nak).toBe(true);
+    expect(r.message.data.sat_cfg_ack).toBe(false);
+  });
+
+  it('decodes every field at its documented offset', () => {
+    const r = parse_packet(make_ack());
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.message.type !== 'ack_gpsdiag') throw new Error('wrong type');
+    const d = r.message.data;
+    expect(d.nonce).toBe(0x1234);
+    expect(d.fix_type).toBe(3);
+    expect(d.num_sv).toBe(7);
+    expect(d.tracked).toBe(9);
+    expect(d.used).toBe(7);
+    expect(d.cno_best).toBe(42);
+    expect(d.cno_mean).toBe(33);
+    expect(d.ge30).toBe(6);
+    expect(d.agc).toBe(2600);
+    expect(d.noise).toBe(88);
+    expect(d.jam).toBe(12);
+    expect(d.crc_ok).toBe(true);
+  });
+
+  it('converts TTFF from wire deciseconds to seconds', () => {
+    const r = parse_packet(make_ack({ ttff_ds: 312 }));
+    if (!r.ok || r.message.type !== 'ack_gpsdiag') throw new Error('wrong type');
+    expect(r.message.data.ttff_s).toBeCloseTo(31.2, 5);
+  });
+
+  it('unpacks the flags byte into booleans, LNA mode and antenna power', () => {
+    // ttff|sat|rf|alive all set, LNA = 2 (bypass), antPower = 2 (DONTKNOW)
+    const flags = 0x0F | (2 << 4) | (2 << 6);
+    const r = parse_packet(make_ack({ flags }));
+    if (!r.ok || r.message.type !== 'ack_gpsdiag') throw new Error('wrong type');
+    const d = r.message.data;
+    expect(d.ttff_valid).toBe(true);
+    expect(d.sat_valid).toBe(true);
+    expect(d.rf_valid).toBe(true);
+    expect(d.gps_alive).toBe(true);
+    expect(d.lna_mode).toBe(2);
+    expect(d.ant_power).toBe(2);
+  });
+
+  it('reports every flag clear when the byte is zero', () => {
+    const r = parse_packet(make_ack({ flags: 0x00 }));
+    if (!r.ok || r.message.type !== 'ack_gpsdiag') throw new Error('wrong type');
+    const d = r.message.data;
+    expect(d.ttff_valid).toBe(false);
+    expect(d.sat_valid).toBe(false);
+    expect(d.rf_valid).toBe(false);
+    expect(d.gps_alive).toBe(false);
+    expect(d.lna_mode).toBe(0);
+    expect(d.ant_power).toBe(0);
+  });
+
+  it('flags a corrupted packet rather than rejecting it', () => {
+    const p = make_ack();
+    p[8] ^= 0xFF;                       // damage cno_best, leave CRC stale
+    const r = parse_packet(p);
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.message.type !== 'ack_gpsdiag') throw new Error('wrong type');
+    expect(r.message.data.crc_ok).toBe(false);
+  });
+
+  it('rejects a short packet', () => {
+    const r = parse_packet(make_ack().subarray(0, 23));
+    expect(r.ok).toBe(false);
   });
 });

@@ -26,6 +26,7 @@ import { serialise_config, config_hash } from '../protocol/config_serialiser';
 import {
   build_handshake,
   build_sim_flight,
+  build_gpsdiag,
   build_testmode,
   build_config_upload,
   build_logic_upload,
@@ -72,6 +73,7 @@ import {
   CH_RUN_DIAG,
   CH_ERASE_LOG,
   CH_CMD_SIM_FLIGHT,
+  CH_CMD_GPSDIAG,
   CH_LOG_PROGRESS,
   CH_EXPORT_LOG_CSV,
   CH_UPLOAD_LOGIC,
@@ -663,6 +665,34 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     },
   );
 
+  /**
+   * CMD_GPSDIAG (0x86) — GPS RF diagnostics.
+   *
+   * Routed over the GROUND STATION first, falling back to direct FC USB.
+   * That order is the feature, not a preference: the console equivalents of
+   * these numbers exist only in a CDC_STREAM==2 build, and the outdoor GPS
+   * test site is battery-powered with no USB host, so the radio is the only
+   * transport that reaches the board where the measurement has to be taken.
+   * The USB fallback keeps the same tab usable at the bench.
+   *
+   * Single-shot: no CAC handshake, so this does not go through CacMachine.
+   * The FC replies with ACK_GPSDIAG carrying the measurement, which the
+   * parser turns into an 'ack_gpsdiag' message and the store forwards.
+   */
+  const on_cmd_gpsdiag = (_event: unknown, act: number): void => {
+    try {
+      const cmd = build_gpsdiag(act & 0xFF, generate_nonce());
+      if (gs.is_connected()) {
+        gs.send(cmd);
+      } else if (fc.is_connected()) {
+        fc.send(cmd);
+      }
+    } catch (err) {
+      console.error('[IPC] cmd_gpsdiag error:', err);
+    }
+  };
+  ipcMain.on(CH_CMD_GPSDIAG, on_cmd_gpsdiag);
+
   ipcMain.on(CH_CMD_SIM_FLIGHT, on_sim_flight);
 
   // -----------------------------------------------------------------------
@@ -775,6 +805,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeListener(CH_RUN_DIAG, on_run_diag);
     ipcMain.removeListener(CH_ERASE_LOG, on_erase_log);
     ipcMain.removeListener(CH_CMD_SIM_FLIGHT, on_sim_flight);
+    ipcMain.removeListener(CH_CMD_GPSDIAG, on_cmd_gpsdiag);
     ipcMain.removeListener(CH_SIM_PUSH, on_sim_push);
     ipcMain.removeListener(CH_SIM_ACTIVE, on_sim_active);
     ipcMain.removeListener(CH_DEBRIEF_CANCEL, on_debrief_cancel);
