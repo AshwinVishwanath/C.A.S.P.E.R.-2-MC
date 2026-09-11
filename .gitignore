@@ -1,7 +1,12 @@
 node_modules/
 dist/
 out/
-package-lock.json
+# package-lock.json is TRACKED, deliberately. It was ignored from the initial
+# commit -- a sensible default for a library, wrong for a shipped
+# application. Mission Control is packaged as a portable .exe and handed to
+# a launch team, so the exact dependency tree that was tested is the one
+# that must ship. `npm ci` also REQUIRES it, and CI could not install
+# without it.
 .claude/
 .vscode/
 
