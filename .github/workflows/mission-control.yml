@@ -1,0 +1,108 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  mission-control.yml — the ground-side decoder, tested on every push.
+#
+#  WHY THIS EXISTS
+#
+#  Mission Control is one of three repos that have to agree on a wire protocol:
+#  the flight computer (C.A.S.P.E.R.-3 Firmware), the ground station
+#  (C.A.S.P.E.R.-2, branch radio-pingpong) and this app. It is the LAST one in
+#  the chain and the only one with a real test suite of its own, so its 468
+#  vitest cases are where a protocol drift usually shows up first — packet
+#  sizes, field scaling, CRC ranges, the COBS framing, the flash-dump decoder.
+#
+#  The failure mode this guards against is not a crash. A downlink field whose
+#  scale factor drifted decodes to a plausible-looking wrong number, and a
+#  plausible-looking wrong number on a launch day is worse than a blank panel.
+#  Until now these tests ran only when someone thought to run them.
+#
+#  WHY `npm ci --ignore-scripts`
+#
+#  Two install-time scripts exist and CI wants neither:
+#
+#    - `postinstall` runs `electron-builder install-app-deps`, which REBUILDS
+#      the native `serialport` binding against Electron's ABI. That is needed
+#      to RUN the packaged app. It is actively wrong for `npm test`, which
+#      runs under plain Node, and irrelevant to `electron-vite build`, which
+#      externalises serialport rather than bundling it. Every test that touches
+#      serialport mocks it with a `vi.mock` factory, so the native binding is
+#      never loaded at all.
+#
+#    - `electron`'s own postinstall downloads a ~100 MB platform binary. CI
+#      never launches Electron; electron-vite only reads electron/package.json
+#      for the major version, and resolves the executable path lazily in the
+#      `dev`/bytecode paths this workflow does not use.
+#
+#  Skipping both was VERIFIED locally against this exact lockfile: 22 files /
+#  468 tests pass, and `npm run build` emits main, preload and renderer
+#  bundles. If a future change makes the build genuinely need a rebuilt native
+#  module, the fix is to drop --ignore-scripts from the build job only — not
+#  from the test job, where the Electron-ABI binding would be the wrong one.
+#
+#  WHY ubuntu-latest when the app ships as a Windows portable .exe
+#
+#  Nothing here packages. `npm run dist` (electron-builder --win portable) is
+#  deliberately absent: it is a release step, it needs the Electron binary and
+#  the icon pipeline, and it produces something a human signs off on rather
+#  than something a push should produce. Linux is several times faster for the
+#  two things this workflow actually does.
+# ─────────────────────────────────────────────────────────────────────────────
+name: mission control
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: mission-control-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 matches the development machine (v24.13.1), which is where the
+      # suite is actually known to pass. `cache: npm` keys off package-lock.json
+      # and restores ~/.npm, which is what makes `npm ci` cheap on reruns.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - name: Install (see header for why scripts are skipped)
+        run: npm ci --ignore-scripts
+
+      - name: Run the suite
+        run: npm test
+
+  build:
+    name: electron-vite build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - name: Install (see header for why scripts are skipped)
+        run: npm ci --ignore-scripts
+
+      # Bundles main / preload / renderer into out/. This is the only thing in
+      # the repo that type-resolves and links the whole app together, so it
+      # catches the class of breakage vitest cannot see: a module that no test
+      # imports, an import path that only exists on someone's disk, a renderer
+      # entry that stopped resolving. It does NOT typecheck — electron-vite
+      # transpiles with esbuild and strips types without checking them, so a
+      # green build is not a green `tsc`.
+      - name: Build
+        run: npm run build
