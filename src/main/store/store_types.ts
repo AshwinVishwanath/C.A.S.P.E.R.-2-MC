@@ -193,6 +193,10 @@ export interface TelemetrySnapshot {
    *  copy of the channel table. 0 when gs_channel is 0. */
   gs_channel_hz: number;
 
+  /** False when the ground station crossed bands and its image calibration
+   *  did not complete: the receiver is de-rated, not broken. */
+  gs_image_cal_ok: boolean;
+
   // --- Flags ---
   /** True if the FC has flagged a system error. */
   sys_error: boolean;
@@ -308,6 +312,7 @@ export const DEFAULT_SNAPSHOT: TelemetrySnapshot = {
   ground_lon_deg: 0,
   gs_channel: 0,
   gs_channel_hz: 0,
+  gs_image_cal_ok: true,
 
   // Flags
   sys_error: false,

@@ -30,6 +30,7 @@ function makeDefaultState() {
   return {
     gsChannel: 0,
     gsChannelHz: 0,
+    gsImageCalOk: true,
     rssi: 0,
     dataAge: 0,
     batt: 0,
@@ -102,6 +103,7 @@ function mapSnapshot(snap, roles) {
     // UI must show as a dash rather than as a channel.
     gsChannel: snap.gs_channel != null ? snap.gs_channel : 0,
     gsChannelHz: snap.gs_channel_hz != null ? snap.gs_channel_hz : 0,
+    gsImageCalOk: snap.gs_image_cal_ok !== false,
     rssi: snap.rssi_dbm != null ? snap.rssi_dbm : 0,
     dataAge: snap.data_age_ms != null ? snap.data_age_ms : 0,
     batt: snap.batt_v != null ? snap.batt_v : 0,

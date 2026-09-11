@@ -252,6 +252,9 @@ export interface GsMsgStatus {
   ground_lon_deg: number;
   /** LoRa channel the ground station is tuned to (1-based). */
   channel: number;
+  /** False when the GS crossed bands and its image calibration did not
+   *  complete -- the receiver is de-rated, not broken. */
+  image_cal_ok: boolean;
   /** True if CRC-32 verified OK. */
   crc_ok: boolean;
 }

@@ -201,6 +201,7 @@ export class TelemetryStore {
     // Resolved here, in the main process, from the one copy of the channel
     // table -- so the renderer never needs its own and cannot drift from it.
     s.gs_channel_hz       = channel_to_hz(parsed.channel);
+    s.gs_image_cal_ok     = parsed.image_cal_ok;
     this._notify();
   }
 

@@ -345,6 +345,12 @@ export const MSG_ID_GS_CMD_CHANNEL = 0x14;
 /** [ID:1][MAG:2][CH:1][CRC:4] = 8. */
 export const SIZE_GS_CMD_CHANNEL = 8;
 
+/* GS_MSG_STATUS channel byte. The plan tops out at 38, so the high bit is
+ * free and carries 'the last band-change image calibration did not complete'
+ * -- a receiver that is quietly de-rated rather than merely quiet. */
+export const GS_CH_MASK = 0x7F;
+export const GS_CH_IMAGE_CAL_FAIL = 0x80;
+
 /* ── The channel plan ───────────────────────────────────────────────────
  * MIRROR of flight/radio/radio_channel.h. The FC is the source of truth and
  * gates/check_protocol_sync.sh guards the pair.

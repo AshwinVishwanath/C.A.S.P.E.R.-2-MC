@@ -17,7 +17,7 @@ import useChannel, { phaseLabel } from '../hooks/use_channel.jsx';
  * the first is how you end up with a ground station and a vehicle on different
  * frequencies with nobody sure which.
  */
-export default function RadioChannelCard({ gsChannel }) {
+export default function RadioChannelCard({ gsChannel, imageCalOk = true }) {
   const { T } = useTheme();
   const { plan, defaultChannel, state, request, busy, supported } = useChannel();
   const [selected, setSelected] = useState(null);
@@ -120,6 +120,14 @@ export default function RadioChannelCard({ gsChannel }) {
         {state.error ? (
           <div style={{ ...mono, color: T.danger, marginTop: SPACE.s2, maxWidth: 640 }}>
             {state.error}
+          </div>
+        ) : null}
+
+        {imageCalOk === false ? (
+          <div style={{ ...mono, color: T.warn, marginTop: SPACE.s2, maxWidth: 640 }}>
+            Ground station image calibration did not complete after the band
+            change — it is receiving on the other band&apos;s trim and will not
+            reach as far as usual. Power-cycling the ground station re-runs it.
           </div>
         ) : null}
 

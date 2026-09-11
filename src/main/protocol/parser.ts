@@ -63,6 +63,8 @@ import {
   SIZE_GS_MSG_STATUS,
   MSG_ID_ACK_CHANNEL,
   SIZE_ACK_CHANNEL,
+  GS_CH_MASK,
+  GS_CH_IMAGE_CAL_FAIL,
   SIZE_ACK_ARM,
   SIZE_ACK_FIRE,
   SIZE_ACK_CONFIG,
@@ -517,7 +519,7 @@ function parse_gs_telem(payload: Uint8Array): ParseResult {
  *   [8-11]  ground_pressure_pa (u32, LE) — ground-level pressure in Pa
  *   [12-15] ground_lat (i32, LE) — pad latitude in degrees * 1e7
  *   [16-19] ground_lon (i32, LE) — pad longitude in degrees * 1e7
- *   [20]    channel (u8) — LoRa channel the GROUND STATION is tuned to
+ *   [20]    channel (u8) — GS_CH_MASK = channel; GS_CH_IMAGE_CAL_FAIL = de-rated
  *   [21-24] CRC-32 (u32, LE) — over bytes [0..20]
  */
 function parse_gs_status(payload: Uint8Array): ParseResult {
@@ -542,7 +544,11 @@ function parse_gs_status(payload: Uint8Array): ParseResult {
   /* [20] channel -- the LoRa channel the GROUND STATION is tuned to. The
    * ground station has no ACK for a retune; this byte, once per heartbeat,
    * is both the confirmation and the ground truth. */
-  const channel = payload[20];
+  const channel = payload[20] & GS_CH_MASK;
+  // High bit set = the ground station crossed bands and its image
+  // calibration did not complete, so it is receiving on the wrong band's
+  // trim. It still works; it just does not reach as far as the numbers say.
+  const image_cal_ok = (payload[20] & GS_CH_IMAGE_CAL_FAIL) === 0;
 
   const data: GsMsgStatus = {
     msg_id: MSG_ID_GS_STATUS,
@@ -555,6 +561,7 @@ function parse_gs_status(payload: Uint8Array): ParseResult {
     ground_lat_deg,
     ground_lon_deg,
     channel,
+    image_cal_ok,
     crc_ok
   };
 
