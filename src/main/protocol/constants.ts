@@ -185,7 +185,10 @@ export const SIZE_FC_MSG_EVENT = 11;
 export const SIZE_GS_MSG_TELEM = 39;
 
 /** GS_MSG_STATUS payload size. Total: 24 bytes (v5 layout). */
-export const SIZE_GS_MSG_STATUS = 24;
+/* 25, not 24: the ground station appended a `channel` byte after
+ * ground_lon_1e7 and before crc32 (GS 8b6957a). Every prior field keeps its
+ * offset; only the CRC moved, 20 -> 21. */
+export const SIZE_GS_MSG_STATUS = 25;
 
 /** CMD_ARM packet size. Total: 12 bytes. */
 export const SIZE_CMD_ARM = 12;
@@ -310,3 +313,86 @@ export const NACK_ERROR_MESSAGES: Record<NackError, string> = {
   [NackError.CfgTooLarge]: 'Configuration payload too large',
   [NackError.FlashFail]: 'Flash write failure'
 };
+
+/* ── CMD_CHANNEL (0x87) / ACK_CHANNEL (0xA8) ────────────────────────────
+ * Selectable LoRa channel. See docs/specs/MC_FC_ALIGNMENT.md S16 in the FC
+ * repo -- that section is the contract this implements. */
+export const MSG_ID_CMD_CHANNEL = 0x87;
+export const MSG_ID_ACK_CHANNEL = 0xA8;
+
+/** CMD_CHANNEL packet size. [ID:1][MAG:2][NONCE:2][ACT:1][CH:1][CRC:4] = 11. */
+export const SIZE_CMD_CHANNEL = 11;
+/** ACK_CHANNEL. [ID:1][NONCE:2][ACT:1][CH:1][ST:1][FREQ_HZ:4][NCH:1][CRC:4] = 15. */
+export const SIZE_ACK_CHANNEL = 15;
+
+/* CMD_CHANNEL ACT byte. The three verbs exist because this command travels
+ * over the link it is about to move: SET stages and arms the FC's revert
+ * deadline, COMMIT (which must reach the FC on the NEW channel) makes it
+ * stick, REVERT abandons it early. */
+export const CH_ACT_SET = 0x00;
+export const CH_ACT_COMMIT = 0x01;
+export const CH_ACT_REVERT = 0x02;
+
+/* ACK_CHANNEL STATUS byte. */
+export const CH_ST_STAGED = 0x00;
+export const CH_ST_COMMITTED = 0x01;
+export const CH_ST_REVERTED = 0x02;
+export const CH_ST_UNCHANGED = 0x03;
+
+/* GS-LOCAL command, sent over USB to the ground station, NEVER relayed to the
+ * flight computer -- it retunes THIS end of the link. */
+export const MSG_ID_GS_CMD_CHANNEL = 0x14;
+/** [ID:1][MAG:2][CH:1][CRC:4] = 8. */
+export const SIZE_GS_CMD_CHANNEL = 8;
+
+/* ── The channel plan ───────────────────────────────────────────────────
+ * MIRROR of flight/radio/radio_channel.h. The FC is the source of truth and
+ * gates/check_protocol_sync.sh guards the pair.
+ *
+ * The index is what travels on the wire, so a table that disagrees tunes two
+ * radios to two different frequencies and the link never comes up, with
+ * nothing to say why. That is why ACK_CHANNEL carries the frequency the FC
+ * ACTUALLY tuned and the UI must display THAT, not a frequency re-derived
+ * from this table -- a mismatch then shows as a wrong number on screen
+ * instead of as silence. channel_to_hz() below is for populating the
+ * dropdown, never for reporting what the vehicle is doing. */
+export const RADIO_CH_EU_FIRST = 1;
+export const RADIO_CH_EU_COUNT = 13;
+export const RADIO_CH_EU_BASE_HZ = 863_500_000;
+export const RADIO_CH_EU_STEP_HZ = 500_000;
+
+export const RADIO_CH_US_FIRST = RADIO_CH_EU_FIRST + RADIO_CH_EU_COUNT; // 14
+export const RADIO_CH_US_COUNT = 25;
+export const RADIO_CH_US_BASE_HZ = 903_000_000;
+export const RADIO_CH_US_STEP_HZ = 1_000_000;
+
+export const RADIO_CHANNEL_MIN = RADIO_CH_EU_FIRST;
+export const RADIO_CHANNEL_COUNT = RADIO_CH_EU_COUNT + RADIO_CH_US_COUNT; // 38
+
+/** Channels the firmware boots on, per band. Mirrors radio_channel.h. */
+export const RADIO_CH_EU_DEFAULT = 10; // 868.0 MHz
+export const RADIO_CH_US_DEFAULT = 26; // 915.0 MHz
+
+/** How long the FC stays on a new channel before reverting, ms. Mission
+ *  Control must give up and retune the ground station back after this. */
+export const RADIO_CHANNEL_REVERT_MS = 10_000;
+
+export function channel_valid(ch: number): boolean {
+  return Number.isInteger(ch) && ch >= RADIO_CHANNEL_MIN && ch <= RADIO_CHANNEL_COUNT;
+}
+
+export function channel_band(ch: number): 'EU' | 'US' {
+  return ch >= RADIO_CH_US_FIRST ? 'US' : 'EU';
+}
+
+export function channel_to_hz(ch: number): number {
+  if (!channel_valid(ch)) return 0;
+  return channel_band(ch) === 'US'
+    ? RADIO_CH_US_BASE_HZ + (ch - RADIO_CH_US_FIRST) * RADIO_CH_US_STEP_HZ
+    : RADIO_CH_EU_BASE_HZ + (ch - RADIO_CH_EU_FIRST) * RADIO_CH_EU_STEP_HZ;
+}
+
+/** "868.000 MHz" from Hz. Three decimals resolves the 500 kHz EU grid. */
+export function format_hz(hz: number): string {
+  return `${(hz / 1e6).toFixed(3)} MHz`;
+}

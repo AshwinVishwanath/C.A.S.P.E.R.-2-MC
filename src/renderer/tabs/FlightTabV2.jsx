@@ -143,6 +143,12 @@ export default function FlightTabV2({ tel, cmd, serial, flightSim, tweaks }) {
     gpsSats: t.gpsSats || 0,
     hdop: 0, // FC does not expose HDOP yet — placeholder
 
+    // The ground station's reported channel, straight from GS_MSG_STATUS.
+    // channelHz is derived only for DISPLAY of the current settled channel;
+    // anything reporting an in-flight change uses the frequency the flight
+    // computer itself returns in ACK_CHANNEL.
+    channel: t.gsChannel || 0,
+    channelHz: t.gsChannelHz || 0,
     rssi: t.rssi || 0,
     dataAge: t.dataAge || 0,
     snr: t.snr || 0,

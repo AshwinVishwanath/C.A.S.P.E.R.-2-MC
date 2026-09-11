@@ -12,6 +12,7 @@ import FlightConfigEditor from '../components/FlightConfigEditor.jsx';
 import { useFlightConfig } from '../hooks/useFlightConfig.js';
 
 import PyroEditor, { LogicModeControl } from '../pyro/PyroEditor.jsx';
+import RadioChannelCard from '../components/RadioChannelCard.jsx';
 import { pyroReducer, initialState } from '../pyro/reducer.js';
 import { buildSeedGraph } from '../pyro/seed.js';
 import { toLogicGraphIR } from '../pyro/ir.js';
@@ -224,7 +225,7 @@ function FlightSimBox({ flightSim, serial }) {
 // ---------------------------------------------------------------------------
 // SetupTab — header + serial bar + pyro editor
 // ---------------------------------------------------------------------------
-export default function SetupTab({ serial, flightSim }) {
+export default function SetupTab({ serial, flightSim, tel }) {
   const T = useTheme();
   const scheme = T.scheme || 'fusion';
   const sk = SCHEME_PROPS[scheme] || SCHEME_PROPS.fusion;
@@ -428,6 +429,13 @@ export default function SetupTab({ serial, flightSim }) {
 
       {/* Serial picker */}
       <SerialBar serial={serial} />
+
+      {/* Radio channel. Directly under the serial picker on purpose: both are
+          about WHICH LINK you are on, and both are decided before anything
+          else on this page matters. */}
+      <div style={{ marginBottom: SPACE.s4 }}>
+        <RadioChannelCard gsChannel={tel?.gsChannel} />
+      </div>
 
       {/* Flight sim source (OpenRocket) */}
       <FlightSimBox flightSim={flightSim} serial={serial} />

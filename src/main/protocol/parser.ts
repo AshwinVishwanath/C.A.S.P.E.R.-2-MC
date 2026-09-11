@@ -20,6 +20,7 @@ import {
   GsMsgStatus,
   AckArm,
   AckGpsDiag,
+  AckChannel,
   AckFire,
   AckConfig,
   AckLogic,
@@ -60,6 +61,8 @@ import {
   SIZE_FC_MSG_EVENT,
   SIZE_GS_MSG_TELEM,
   SIZE_GS_MSG_STATUS,
+  MSG_ID_ACK_CHANNEL,
+  SIZE_ACK_CHANNEL,
   SIZE_ACK_ARM,
   SIZE_ACK_FIRE,
   SIZE_ACK_CONFIG,
@@ -206,6 +209,9 @@ export function parse_packet(
 
     case MSG_ID_ACK_GPSDIAG:
       return parse_ack_gpsdiag(payload);
+
+    case MSG_ID_ACK_CHANNEL:
+      return parse_ack_channel(payload);
 
     case MSG_ID_ACK_ARM:
       return parse_ack_arm(payload);
@@ -501,9 +507,9 @@ function parse_gs_telem(payload: Uint8Array): ParseResult {
 /**
  * Parse GS_MSG_STATUS packet.
  *
- * Layout (24 bytes total):
+ * Layout (25 bytes total):
  *   [0]     msg_id (0x13)
- *   [1]     radio_profile (u8) — 0=Profile A SF7, 1=Profile B SF8
+ *   [1]     radio_profile (u8) — 0=Profile A SF7, 1=Profile B SF9
  *   [2]     last_rssi (i8) — dBm
  *   [3]     last_snr (i8) — dB
  *   [4-5]   rx_pkt_count (u16, LE) — total FC packets received
@@ -511,7 +517,8 @@ function parse_gs_telem(payload: Uint8Array): ParseResult {
  *   [8-11]  ground_pressure_pa (u32, LE) — ground-level pressure in Pa
  *   [12-15] ground_lat (i32, LE) — pad latitude in degrees * 1e7
  *   [16-19] ground_lon (i32, LE) — pad longitude in degrees * 1e7
- *   [20-23] CRC-32 (u32, LE) — over bytes [0..19]
+ *   [20]    channel (u8) — LoRa channel the GROUND STATION is tuned to
+ *   [21-24] CRC-32 (u32, LE) — over bytes [0..20]
  */
 function parse_gs_status(payload: Uint8Array): ParseResult {
   if (payload.length < SIZE_GS_MSG_STATUS) {
@@ -532,6 +539,10 @@ function parse_gs_status(payload: Uint8Array): ParseResult {
   const ground_pressure_pa = read_u32_le(payload, 8);
   const ground_lat_deg = read_i32_le(payload, 12) * 1e-7;
   const ground_lon_deg = read_i32_le(payload, 16) * 1e-7;
+  /* [20] channel -- the LoRa channel the GROUND STATION is tuned to. The
+   * ground station has no ACK for a retune; this byte, once per heartbeat,
+   * is both the confirmation and the ground truth. */
+  const channel = payload[20];
 
   const data: GsMsgStatus = {
     msg_id: MSG_ID_GS_STATUS,
@@ -543,6 +554,7 @@ function parse_gs_status(payload: Uint8Array): ParseResult {
     ground_pressure_pa,
     ground_lat_deg,
     ground_lon_deg,
+    channel,
     crc_ok
   };
 
@@ -597,7 +609,7 @@ function parse_ack_arm(payload: Uint8Array): ParseResult {
 /**
  * Parse ACK_GPSDIAG packet.
  *
- * Layout (23 bytes total), matching flight/telemetry/tlm_types.h:
+ * Layout (24 bytes total), matching flight/telemetry/tlm_types.h:
  *   [0]     msg_id (0xA7)
  *   [1-2]   nonce (u16, LE)
  *   [3]     act (echoed GD_ACT_*)
@@ -886,4 +898,50 @@ function parse_handshake(payload: Uint8Array): ParseResult {
   };
 
   return { ok: true, message: { type: 'handshake', data } };
+}
+
+// ---------------------------------------------------------------------------
+// ACK_CHANNEL parser (msg_id 0xA8, 15 bytes)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse ACK_CHANNEL packet.
+ *
+ * Layout (15 bytes total), matching flight/telemetry/tlm_types.h:
+ *   [0]     msg_id (0xA8)
+ *   [1-2]   nonce (u16, LE)
+ *   [3]     act (echoed CH_ACT_*)
+ *   [4]     channel (echoed, 1-based)
+ *   [5]     status (CH_ST_*)
+ *   [6-9]   freq_hz (u32, LE) -- the frequency ACTUALLY tuned
+ *   [10]    channel_count -- the FC build's channel count
+ *   [11-14] CRC-32 (u32, LE) -- over bytes [0..10]
+ *
+ * freq_hz is reported by the flight computer rather than looked up locally on
+ * purpose. See the AckChannel doc comment: it is what makes a channel-table
+ * disagreement visible instead of silent.
+ */
+function parse_ack_channel(payload: Uint8Array): ParseResult {
+  if (payload.length < SIZE_ACK_CHANNEL) {
+    return {
+      ok: false,
+      error: `ACK_CHANNEL too short: ${payload.length} < ${SIZE_ACK_CHANNEL}`,
+      msg_id: MSG_ID_ACK_CHANNEL
+    };
+  }
+
+  const crc_ok = verify_packet_crc(payload);
+
+  const data: AckChannel = {
+    msg_id: MSG_ID_ACK_CHANNEL,
+    nonce: read_u16_le(payload, 1),
+    act: payload[3],
+    channel: payload[4],
+    status: payload[5],
+    freq_hz: read_u32_le(payload, 6),
+    channel_count: payload[10],
+    crc_ok
+  };
+
+  return { ok: true, message: { type: 'ack_channel', data } };
 }

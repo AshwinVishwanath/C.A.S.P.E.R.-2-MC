@@ -483,6 +483,15 @@ export default function FlightTab({ T, sim, rawTel, scheme, motion, flightConfig
             <div style={{ fontFamily: FONT.mono, fontSize: TYPE.cap, color: T.muted, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
               {sim.rssi.toFixed(0)} dBm · CRC {sim.crc.errors}/{sim.crc.total.toLocaleString()}
             </div>
+            {/* Which channel the link is on. Sourced from the GROUND STATION's
+                own GS_MSG_STATUS report rather than from anything the UI
+                believes it set: if a channel change half-completed, this is
+                the field that shows it. A dash means no ground station has
+                reported yet, which is different from channel 0. */}
+            <div style={{ fontFamily: FONT.mono, fontSize: TYPE.cap, color: T.muted, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+              {sim.channel > 0 ? `CH ${sim.channel}` : "CH —"}
+              {sim.channelHz > 0 ? ` · ${(sim.channelHz / 1e6).toFixed(3)} MHz` : ""}
+            </div>
           </div>
         </Panel>
         <Panel T={T} scheme={scheme} padded={false}>

@@ -18,7 +18,8 @@ import { promises as fsp } from 'fs';
 import { parse_openrocket_csv } from '../sim/openrocket_csv';
 import { phase_to_fsm, type SimSamplePush } from '../sim/sim_types';
 import type { TelemetryStore } from '../store/telemetry_store';
-import type { CacMachine } from '../command/cac_machine';
+import type { CacMachine } from '../command/cac_machine';
+import { ChannelMachine } from '../command/channel_machine';
 import type { FcUsb } from '../transport/fc_usb';
 import type { GsUsb } from '../transport/gs_usb';
 import { scan_ports } from '../transport/port_scanner';
@@ -33,7 +34,15 @@ import {
   generate_nonce
 } from '../protocol/command_builder';
 import { send_upload_with_ack } from '../protocol/upload_ack';
-import { LOGIC_BLOB_MAX } from '../protocol/constants';
+import {
+  LOGIC_BLOB_MAX,
+  RADIO_CH_EU_DEFAULT,
+  RADIO_CHANNEL_MIN,
+  RADIO_CHANNEL_COUNT,
+  channel_to_hz,
+  channel_band,
+  format_hz
+} from '../protocol/constants';
 import type { FlightConfig } from '../protocol/types';
 import { run_readout, run_erase } from '../readout/readout_orchestrator';
 import { export_all_csv, export_hr_csv, export_lr_csv, export_summary_csv } from '../readout/csv_export';
@@ -74,6 +83,8 @@ import {
   CH_ERASE_LOG,
   CH_CMD_SIM_FLIGHT,
   CH_CMD_GPSDIAG,
+  CH_CMD_CHANNEL,
+  CH_GET_CHANNEL_PLAN,
   CH_LOG_PROGRESS,
   CH_EXPORT_LOG_CSV,
   CH_UPLOAD_LOGIC,
@@ -103,6 +114,8 @@ export interface IpcDependencies {
   store: TelemetryStore;
   /** CAC command state machine. */
   cac: CacMachine;
+  /** Drives the channel-change handshake. See command/channel_machine.ts. */
+  channel: ChannelMachine;
   /** Flight computer USB transport. */
   fc: FcUsb;
   /** Ground station USB transport. */
@@ -143,7 +156,7 @@ function safe_send(window: BrowserWindow, channel: string, ...args: unknown[]): 
  *   the window to remove all handlers and subscriptions.
  */
 export function register_ipc_handlers(deps: IpcDependencies): () => void {
-  const { window, store, cac, fc, gs } = deps;
+  const { window, store, cac, channel, fc, gs } = deps;
 
   /** Holds the last successful readout result for CSV export. */
   let last_readout: ReadoutResult | null = null;
@@ -693,6 +706,49 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
   };
   ipcMain.on(CH_CMD_GPSDIAG, on_cmd_gpsdiag);
 
+  /**
+   * Channel change. The renderer sends only the target; every step after that
+   * -- acknowledge on the old channel, retune the ground station, commit on
+   * the new one, and put everything back if it does not answer -- belongs to
+   * ChannelMachine, because the sequence has to complete inside the flight
+   * computer's revert deadline and cannot wait on a UI round trip.
+   *
+   * `current` is taken from the ground station's own reported channel rather
+   * than from anything the UI believes, so a failed change restores where the
+   * receiver ACTUALLY is.
+   */
+  const on_cmd_channel = (_event: unknown, target: number): void => {
+    try {
+      // 0 means no ground station has reported a channel yet -- fall back to
+      // the plan's EU default, which is what an untold board boots on.
+      const reported = store.get_snapshot().gs_channel;
+      const current = reported > 0 ? reported : RADIO_CH_EU_DEFAULT;
+      channel.start(target & 0xFF, current);
+    } catch (err) {
+      console.error('[IPC] cmd_channel error:', err);
+    }
+  };
+  ipcMain.on(CH_CMD_CHANNEL, on_cmd_channel);
+
+  /**
+   * Serve the channel plan. Built here, from the same constants the command
+   * builder uses, so the renderer never carries its own copy of the table --
+   * one fewer place for the FC and the UI to disagree about what "channel 7"
+   * means.
+   */
+  ipcMain.handle(CH_GET_CHANNEL_PLAN, () => {
+    const plan = [];
+    for (let ch = RADIO_CHANNEL_MIN; ch <= RADIO_CHANNEL_COUNT; ch++) {
+      plan.push({
+        channel: ch,
+        hz: channel_to_hz(ch),
+        band: channel_band(ch),
+        label: format_hz(channel_to_hz(ch))
+      });
+    }
+    return { plan, default_channel: RADIO_CH_EU_DEFAULT };
+  });
+
   ipcMain.on(CH_CMD_SIM_FLIGHT, on_sim_flight);
 
   // -----------------------------------------------------------------------
@@ -806,6 +862,7 @@ export function register_ipc_handlers(deps: IpcDependencies): () => void {
     ipcMain.removeListener(CH_ERASE_LOG, on_erase_log);
     ipcMain.removeListener(CH_CMD_SIM_FLIGHT, on_sim_flight);
     ipcMain.removeListener(CH_CMD_GPSDIAG, on_cmd_gpsdiag);
+    ipcMain.removeListener(CH_CMD_CHANNEL, on_cmd_channel);
     ipcMain.removeListener(CH_SIM_PUSH, on_sim_push);
     ipcMain.removeListener(CH_SIM_ACTIVE, on_sim_active);
     ipcMain.removeListener(CH_DEBRIEF_CANCEL, on_debrief_cancel);

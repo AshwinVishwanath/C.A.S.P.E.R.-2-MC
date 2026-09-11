@@ -39,7 +39,16 @@ export const FLASH_PRELAUNCH_BASE = 0x00891000;
 export const FLASH_PRELAUNCH_SIZE = 0x02769000; // 39.41 MiB
 export const FLASH_HR_BASE = 0x02ffa000;
 export const FLASH_PROLOGUE_BASE = 0x03ffa000;
-export const FLASH_HR_END = FLASH_PROLOGUE_BASE; // 16 MiB pool
+/* An 8 KB region holding the selected LoRa channel, carved directly below the
+ * prologue (flight/logging/log_types.h FLASH_RADIO_BASE). It pulled the top of
+ * the HR pool down by another 0x2000 -- the HR writer already stops at this
+ * boundary, so older dumps decode unchanged; the cap simply moves down so a
+ * scan cannot wander into the radio/prologue/cfgpersist regions. */
+export const FLASH_RADIO_BASE = 0x03ff8000;
+export const FLASH_RADIO_SIZE = 0x00002000; // 8 KB = 2 x 4 KB sectors
+export const RADIO_SLOT_A = 0x03ff8000;
+export const RADIO_SLOT_B = 0x03ff9000;
+export const FLASH_HR_END = FLASH_RADIO_BASE; // was FLASH_PROLOGUE_BASE
 export const PROLOGUE_SLOT_A = 0x03ffa000;
 export const PROLOGUE_SLOT_B = 0x03ffb000;
 

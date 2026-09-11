@@ -132,7 +132,7 @@ function Shell({ tweaks, setTweak, telemetry, serial, command, diag, flightSim }
         <Sidebar activeTab={activeTab} onChange={setActiveTab} />
 
         <main style={{ flex: 1, overflow: 'auto', position: 'relative', background: 'transparent' }}>
-          {activeTab === 'setup'    && <SetupTab serial={serial} flightSim={flightSim} />}
+          {activeTab === 'setup'    && <SetupTab serial={serial} flightSim={flightSim} tel={telemetry} />}
           {activeTab === 'test'     && <TestTab tel={telemetry} diag={diag} cmd={command} />}
           {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} flightSim={flightSim} tweaks={tweaks} />}
           {activeTab === 'tracking' && <TrackTab tel={telemetry} serial={serial} />}

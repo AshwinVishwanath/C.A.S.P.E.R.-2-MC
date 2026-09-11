@@ -27,7 +27,11 @@ import {
   SIZE_CONFIRM,
   SIZE_ABORT,
   MSG_ID_CMD_GPSDIAG,
-  SIZE_CMD_GPSDIAG
+  SIZE_CMD_GPSDIAG,
+  MSG_ID_CMD_CHANNEL,
+  SIZE_CMD_CHANNEL,
+  MSG_ID_GS_CMD_CHANNEL,
+  SIZE_GS_CMD_CHANNEL
 } from './constants';
 import { crc32_compute } from './crc32';
 
@@ -376,4 +380,70 @@ export function generate_nonce(): number {
   }
   // Fallback for environments without crypto API
   return Math.floor(Math.random() * 0x10000);
+}
+
+/**
+ * Build CMD_CHANNEL (0x87, 11 bytes) -- select the flight computer's LoRa channel.
+ *
+ * Layout:
+ *   [0]    msg_id (0x87)
+ *   [1]    MAGIC_1
+ *   [2]    MAGIC_2
+ *   [3-4]  nonce (u16, LE)
+ *   [5]    act (CH_ACT_SET / CH_ACT_COMMIT / CH_ACT_REVERT)
+ *   [6]    channel (1-based)
+ *   [7-10] CRC-32 over [0..6] (u32, LE)
+ *
+ * No ~act complement byte, unlike CMD_GNDTEST/CMD_GPSDIAG. Those carry one
+ * because a corrupted act there selects a different action and one of those
+ * actions can actuate. Here both bytes are validated by the FC against closed
+ * sets, and the worst a corrupted-but-valid pair reaches is a retune the FC's
+ * revert deadline undoes on its own.
+ *
+ * @param act - CH_ACT_*.
+ * @param ch  - channel index; ignored by the FC for CH_ACT_REVERT.
+ */
+export function build_channel(act: number, ch: number, nonce: number): Uint8Array {
+  const buf = new Uint8Array(SIZE_CMD_CHANNEL);
+
+  buf[0] = MSG_ID_CMD_CHANNEL;
+  buf[1] = MAGIC_1;
+  buf[2] = MAGIC_2;
+  write_u16_le(buf, 3, nonce & 0xFFFF);
+  buf[5] = act & 0xFF;
+  buf[6] = ch & 0xFF;
+
+  const crc = crc32_compute(buf.subarray(0, 7));
+  write_u32_le(buf, 7, crc);
+
+  return buf;
+}
+
+/**
+ * Build GS_CMD_CHANNEL (0x14, 8 bytes) -- retune the GROUND STATION.
+ *
+ * Layout:
+ *   [0]   msg_id (0x14)
+ *   [1]   MAGIC_1
+ *   [2]   MAGIC_2
+ *   [3]   channel (1-based)
+ *   [4-7] CRC-32 over [0..3] (u32, LE)
+ *
+ * GS-local: it is deliberately outside the 0x80-0x8F range the ground station
+ * relays onward, so it can never reach the flight computer. There is no ACK --
+ * GS_MSG_STATUS reports the channel actually in use once per heartbeat, which
+ * is the confirmation and the ground truth.
+ */
+export function build_gs_channel(ch: number): Uint8Array {
+  const buf = new Uint8Array(SIZE_GS_CMD_CHANNEL);
+
+  buf[0] = MSG_ID_GS_CMD_CHANNEL;
+  buf[1] = MAGIC_1;
+  buf[2] = MAGIC_2;
+  buf[3] = ch & 0xFF;
+
+  const crc = crc32_compute(buf.subarray(0, 4));
+  write_u32_le(buf, 4, crc);
+
+  return buf;
 }

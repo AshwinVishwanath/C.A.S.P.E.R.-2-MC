@@ -4,7 +4,8 @@ import { join } from 'path'
 import { FcUsb } from './transport/fc_usb'
 import { GsUsb } from './transport/gs_usb'
 import { parse_packet } from './protocol/parser'
-import { CacMachine } from './command/cac_machine'
+import { CacMachine } from './command/cac_machine'
+import { ChannelMachine } from './command/channel_machine'
 import { TelemetryStore } from './store/telemetry_store'
 import { register_ipc_handlers } from './ipc/handlers'
 
@@ -17,7 +18,8 @@ let main_window: BrowserWindow | null = null
 let fc: FcUsb
 let gs: GsUsb
 let store: TelemetryStore
-let cac: CacMachine
+let cac: CacMachine
+let channel_machine: ChannelMachine | null = null
 let stale_interval: ReturnType<typeof setInterval>
 let cleanup_ipc: (() => void) | null = null
 
@@ -114,6 +116,11 @@ function wire_gs_pipeline(): void {
         }
         emit_gpsdiag(msg.data)
         break
+      case 'ack_channel':
+        // The machine checks crc_ok itself and ignores a bad frame; routing it
+        // anyway keeps the decision in one place rather than two pipelines.
+        channel_machine?.on_ack(msg.data)
+        break
       case 'ack_arm':
       case 'ack_fire':
       case 'nack':
@@ -136,6 +143,20 @@ function wire_gs_pipeline(): void {
 function emit_gpsdiag(data: unknown): void {
   if (main_window && !main_window.isDestroyed()) {
     main_window.webContents.send('casper:gpsdiag-update', data)
+  }
+}
+
+/**
+ * Push channel-change progress to the renderer.
+ *
+ * Like the GPS diagnostics above, this is NOT routed through CacMachine: a
+ * channel change has no operator CONFIRM phase. Its confirmation is a packet
+ * arriving on the new frequency, which has to be automatic because nobody can
+ * answer a dialog inside the flight computer's revert deadline.
+ */
+function emit_channel(state: unknown): void {
+  if (main_window && !main_window.isDestroyed()) {
+    main_window.webContents.send('casper:channel-update', state)
   }
 }
 
@@ -186,6 +207,11 @@ function wire_fc_pipeline(): void {
           break
         }
         emit_gpsdiag(msg.data)
+        break
+      case 'ack_channel':
+        // The machine checks crc_ok itself and ignores a bad frame; routing it
+        // anyway keeps the decision in one place rather than two pipelines.
+        channel_machine?.on_ack(msg.data)
         break
       case 'ack_arm':
       case 'ack_fire':
@@ -260,6 +286,25 @@ app.whenReady().then(() => {
     }
   })
 
+  // 3b. Channel machine -- drives SET -> retune GS -> COMMIT, and puts the
+  //     ground station back on every failure path.
+  channel_machine = new ChannelMachine({
+    send_fc: (data: Uint8Array) => {
+      if (gs.is_connected()) {
+        gs.send(data)
+      } else if (fc.is_connected()) {
+        fc.send(data)
+      }
+    },
+    // Only a connected ground station can be retuned. Wired straight to the
+    // FC there is nothing between us and it, so this is null and the machine
+    // skips the retune step entirely.
+    send_gs: (data: Uint8Array) => {
+      if (gs.is_connected()) gs.send(data)
+    },
+    emit: (state) => emit_channel(state)
+  })
+
   // 4. Wire data pipelines
   wire_gs_pipeline()
   wire_fc_pipeline()
@@ -275,6 +320,7 @@ app.whenReady().then(() => {
     window: main_window!,
     store,
     cac,
+    channel: channel_machine!,
     fc,
     gs
   })

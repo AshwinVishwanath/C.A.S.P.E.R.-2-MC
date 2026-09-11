@@ -250,6 +250,8 @@ export interface GsMsgStatus {
   ground_lat_deg: number;
   /** Ground longitude in decimal degrees (i32 raw * 1e-7). */
   ground_lon_deg: number;
+  /** LoRa channel the ground station is tuned to (1-based). */
+  channel: number;
   /** True if CRC-32 verified OK. */
   crc_ok: boolean;
 }
@@ -428,6 +430,7 @@ export type ParsedMessage =
   | { type: 'gs_corrupt'; data: GsMsgCorrupt }
   | { type: 'ack_arm'; data: AckArm }
   | { type: 'ack_gpsdiag'; data: AckGpsDiag }
+  | { type: 'ack_channel'; data: AckChannel }
   | { type: 'ack_fire'; data: AckFire }
   | { type: 'ack_config'; data: AckConfig }
   | { type: 'ack_logic'; data: AckLogic }
@@ -525,4 +528,29 @@ export interface FlightConfig {
     /** Minimum self-test integrity percentage. */
     min_integrity_pct: number;
   };
+}
+
+/**
+ * ACK_CHANNEL (0xA8) -- the flight computer's answer to CMD_CHANNEL.
+ *
+ * `freq_hz` is the frequency the FC ACTUALLY tuned (for a SET, the one it is
+ * moving to). Display THIS, never a frequency re-derived from Mission
+ * Control's own channel table: the table lives in three repositories, and if
+ * they disagree this field turns that into a visibly wrong number instead of a
+ * link that silently never comes up.
+ */
+export interface AckChannel {
+  msg_id: number;
+  nonce: number;
+  /** Echoed CH_ACT_*. */
+  act: number;
+  /** Echoed channel index (1-based). */
+  channel: number;
+  /** CH_ST_* -- STAGED / COMMITTED / REVERTED / UNCHANGED. */
+  status: number;
+  /** Frequency the FC tuned, in Hz. Authoritative. */
+  freq_hz: number;
+  /** The FC build's channel count, so the UI can grey out what it cannot tune. */
+  channel_count: number;
+  crc_ok: boolean;
 }

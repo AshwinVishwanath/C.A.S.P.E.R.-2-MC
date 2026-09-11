@@ -8,7 +8,8 @@
  * @module store/telemetry_store
  */
 
-import { TelemetrySnapshot, PyroState, EventLogEntry, DEFAULT_SNAPSHOT } from './store_types';
+import { TelemetrySnapshot, PyroState, EventLogEntry, DEFAULT_SNAPSHOT } from './store_types';
+import { channel_to_hz } from '../protocol/constants';
 import { FcMsgFast, FcMsgGps, FcMsgEvent, GsMsgTelem, GsMsgStatus, FcTlmStatus, EventType, FsmState, FSM_STATE_NAMES } from '../protocol/types';
 import { RING_BUFFER_DEPTH, STALE_THRESHOLD_MS, EULER_EMA_ALPHA } from '../protocol/constants';
 import { quat_to_euler_deg } from '../protocol/derived';
@@ -196,6 +197,10 @@ export class TelemetryStore {
     s.ground_pressure_pa  = parsed.ground_pressure_pa;
     s.ground_lat_deg      = parsed.ground_lat_deg;
     s.ground_lon_deg      = parsed.ground_lon_deg;
+    s.gs_channel          = parsed.channel;
+    // Resolved here, in the main process, from the one copy of the channel
+    // table -- so the renderer never needs its own and cannot drift from it.
+    s.gs_channel_hz       = channel_to_hz(parsed.channel);
     this._notify();
   }
 

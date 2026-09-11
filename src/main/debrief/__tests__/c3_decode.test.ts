@@ -39,6 +39,9 @@ import {
   FLASH_INDEX_BASE,
   LOG_REC_TYPE_BMI,
   type IndexEntry,
+  FLASH_RADIO_BASE,
+  FLASH_RADIO_SIZE,
+  FLASH_PROLOGUE_BASE
 } from '../c3_log_format';
 import { decimate, to_body, build_series } from '../c3_series';
 
@@ -555,7 +558,13 @@ describe('flash map', () => {
     // Guards against a firmware re-carve landing here unnoticed: these are
     // _Static_assert-pinned in log_types.h.
     expect(FLASH_LR_END).toBe(FLASH_BMI_BASE);
-    expect(FLASH_HR_END - FLASH_HR_BASE).toBe(0x1000000); // 16 MiB
+    // 16 MiB minus 8 KB. The radio region (the selected LoRa channel) was
+    // carved directly below the prologue on 2026-09-11 and pulled the top of
+    // the HR pool down by 0x2000. This test doing its job is exactly how that
+    // re-carve was caught on this side.
+    expect(FLASH_HR_END - FLASH_HR_BASE).toBe(0x1000000 - 0x2000);
+    expect(FLASH_HR_END).toBe(FLASH_RADIO_BASE);
+    expect(FLASH_PROLOGUE_BASE - FLASH_RADIO_BASE).toBe(FLASH_RADIO_SIZE);
     expect(PROLOGUE_SLOT_B - PROLOGUE_SLOT_A).toBe(0x1000);
   });
 });

@@ -134,6 +134,19 @@ export const CH_CMD_GPSDIAG = 'casper:cmd-gpsdiag';
 /** ACK_GPSDIAG pushed from main to renderer when the FC answers. */
 export const CH_GPSDIAG_UPDATE = 'casper:gpsdiag-update';
 
+/** Renderer -> main: request a channel change (payload: target channel). */
+export const CH_CMD_CHANNEL = 'casper:cmd-channel';
+
+/** Main -> renderer: ChannelState on every phase change. */
+export const CH_CHANNEL_UPDATE = 'casper:channel-update';
+
+/**
+ * Renderer -> main (invoke): the channel plan, built in the main process from
+ * the one copy of the table. Served rather than duplicated in the renderer so
+ * the plan does not become a fifth place that can drift.
+ */
+export const CH_GET_CHANNEL_PLAN = 'casper:get-channel-plan';
+
 /** Upload a compiled Logic VM program to the FC. Args: (graph: LogicGraphIR). */
 export const CH_UPLOAD_LOGIC = 'casper:upload-logic';
 

@@ -181,6 +181,18 @@ export interface TelemetrySnapshot {
   /** Ground reference longitude in degrees (ground_lon_deg field). */
   ground_lon_deg: number;
 
+  /**
+   * LoRa channel the GROUND STATION reports it is tuned to (1-based), from
+   * GS_MSG_STATUS. This is the authoritative 'where are we listening' value:
+   * a failed channel change restores THIS, not whatever the UI last showed.
+   * 0 means no ground station has reported yet.
+   */
+  gs_channel: number;
+
+  /** Centre frequency of gs_channel in Hz, resolved in main from the single
+   *  copy of the channel table. 0 when gs_channel is 0. */
+  gs_channel_hz: number;
+
   // --- Flags ---
   /** True if the FC has flagged a system error. */
   sys_error: boolean;
@@ -294,6 +306,8 @@ export const DEFAULT_SNAPSHOT: TelemetrySnapshot = {
   ground_pressure_pa: 0,
   ground_lat_deg: 0,
   ground_lon_deg: 0,
+  gs_channel: 0,
+  gs_channel_hz: 0,
 
   // Flags
   sys_error: false,

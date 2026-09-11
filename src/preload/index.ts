@@ -137,6 +137,25 @@ const casper_api = {
   },
 
   /**
+   * Ask the flight computer to move to `channel`. Main drives the whole
+   * SET -> retune ground station -> COMMIT sequence; the renderer only picks a
+   * number and watches on_channel_update for progress.
+   */
+  cmd_channel: (channel: number): void => {
+    ipcRenderer.send('casper:cmd-channel', channel)
+  },
+
+  /** Subscribe to channel-change progress. Returns an unsubscribe function. */
+  on_channel_update: (cb: (state: unknown) => void): (() => void) => {
+    const listener = (_e: unknown, state: unknown): void => cb(state)
+    ipcRenderer.on('casper:channel-update', listener)
+    return () => ipcRenderer.removeListener('casper:channel-update', listener)
+  },
+
+  /** Fetch the channel plan (built in main from the single copy of the table). */
+  get_channel_plan: (): Promise<unknown> => ipcRenderer.invoke('casper:get-channel-plan'),
+
+  /**
    * Upload a logic graph to the FC.
    *
    * Compiles the graph in the main process and, if the FC is connected,
