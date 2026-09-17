@@ -434,7 +434,11 @@ export default function SetupTab({ serial, flightSim, tel }) {
           about WHICH LINK you are on, and both are decided before anything
           else on this page matters. */}
       <div style={{ marginBottom: SPACE.s4 }}>
-        <RadioChannelCard gsChannel={tel?.gsChannel} imageCalOk={tel?.gsImageCalOk} />
+        <RadioChannelCard
+          gsChannel={tel?.gsChannel}
+          imageCalOk={tel?.gsImageCalOk}
+          connected={!!(serial?.gs_connected || serial?.fc_connected)}
+        />
       </div>
 
       {/* Flight sim source (OpenRocket) */}

@@ -18,7 +18,7 @@ import useChannel, { phaseLabel } from '../hooks/use_channel.jsx';
  * the first is how you end up with a ground station and a vehicle on different
  * frequencies with nobody sure which.
  */
-export default function RadioChannelCard({ gsChannel, imageCalOk = true }) {
+export default function RadioChannelCard({ gsChannel, imageCalOk = true, connected = true }) {
   // useTheme() returns the theme OBJECT, not a wrapper around it. Destructuring
   // `{ T }` here silently produced undefined, and the first T.accent below threw
   // -- which in React unmounts the whole tree, so the Setup tab rendered black
@@ -73,6 +73,11 @@ export default function RadioChannelCard({ gsChannel, imageCalOk = true }) {
     state.phase === 'failed' ? T.danger : state.phase === 'committed' ? T.accent : T.muted;
 
   const mono = { fontFamily: FONT.mono, fontSize: 11 };
+  // `connected` gates Apply, not the whole control: browsing the plan with
+  // nothing plugged in is useful, but SENDING with nothing plugged in is not.
+  // Without this the command goes nowhere, ChannelMachine stages it anyway,
+  // and three seconds later the operator is told 'the flight computer did
+  // not answer' -- which blames the FC for a cable that was never connected.
   const disabled = !supported || busy || plan.length === 0;
 
   return (
@@ -166,7 +171,7 @@ export default function RadioChannelCard({ gsChannel, imageCalOk = true }) {
 
           <Btn
             kind="primary"
-            disabled={disabled || selected === null || selected === live}
+            disabled={disabled || !connected || selected === null || selected === live}
             onClick={() => request(selected)}
           >
             {busy ? 'Applying…' : 'Apply'}
@@ -174,6 +179,8 @@ export default function RadioChannelCard({ gsChannel, imageCalOk = true }) {
 
           {state.phase !== 'idle' ? (
             <span style={{ ...mono, color: statusColor }}>{phaseLabel(state.phase)}</span>
+          ) : !connected ? (
+            <span style={{ ...mono, color: T.muted }}>connect a link to apply</span>
           ) : null}
         </div>
 

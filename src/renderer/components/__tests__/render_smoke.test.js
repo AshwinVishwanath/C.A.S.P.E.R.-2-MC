@@ -304,6 +304,18 @@ describe('theme tokens used by components are real', () => {
 // ---------------------------------------------------------------------------
 
 describe('render smoke: RadioChannelCard band toggle', () => {
+  it('will not offer Apply with nothing connected, and says why', () => {
+    stubBridge();
+    // Sending with no link stages a change that goes nowhere; three seconds
+    // later the machine reports 'the flight computer did not answer', which
+    // blames the FC for a cable that was never plugged in.
+    const off = withTheme(h(RadioChannelCard, { gsChannel: 0, connected: false }));
+    expect(off).toContain('connect a link to apply');
+
+    const on = withTheme(h(RadioChannelCard, { gsChannel: 10, connected: true }));
+    expect(on).not.toContain('connect a link to apply');
+  });
+
   it('renders both band options', () => {
     stubBridge();
     const html = withTheme(h(RadioChannelCard, { gsChannel: 10 }));
