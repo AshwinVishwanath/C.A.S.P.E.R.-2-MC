@@ -98,6 +98,23 @@ export const TEMP_SCALE = 0.01; // raw -> degC
 /** Quantisation scales the FC may override per-flight via the prologue.
  *  Used only when no valid prologue slot is found (a pre-S15a dump, or a
  *  chip that has never launched). */
+/** The shape of the quantisation scales, with the values left as plain numbers.
+ *
+ * Deliberately NOT `typeof DEFAULT_QUANT_SCALES`. That constant is `as const`,
+ * so its type says `quat_scale` is exactly 2896.309 -- which is the opposite of
+ * what the prologue exists for: the flight computer overrides these per flight,
+ * and a decoded flight carries whatever IT recorded. Using the literal type made
+ * `tsc` reject the prologue path as an error while the default path type-checked,
+ * i.e. the type asserted the one case the design is built to avoid. */
+export interface QuantScales {
+  quat_scale: number;
+  alt_scale_m: number;
+  vel_scale_dms: number;
+  time_scale_100ms: number;
+  batt_offset_v: number;
+  batt_step_v: number;
+}
+
 export const DEFAULT_QUANT_SCALES = {
   quat_scale: 2896.309,
   alt_scale_m: 0.01,

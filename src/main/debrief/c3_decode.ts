@@ -41,6 +41,7 @@ import {
   BMI_RECS_PER_PAGE,
   LOG_REC_TYPE_BMI,
   DEFAULT_QUANT_SCALES,
+  QuantScales,
   type HrRecord,
   type LrRecord,
   type BmiRecord,
@@ -421,7 +422,7 @@ export function extract_records<T>(
 export interface DecodedFlight {
   index: IndexEntry;
   prologue: Prologue | null;
-  scales: typeof DEFAULT_QUANT_SCALES;
+  scales: QuantScales;
   hr: HrRecord[];
   lr: LrRecord[];
   bmi: BmiRecord[];

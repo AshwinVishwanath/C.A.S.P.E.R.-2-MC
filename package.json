@@ -10,8 +10,12 @@
     "build:icon": "node scripts/build-icon.js",
     "preview": "node scripts/dev.js --preview",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:watch": "vitest",
     "dist": "npm run build:icon && npm run build && electron-builder --win portable --x64"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "react": "^18.2.0",

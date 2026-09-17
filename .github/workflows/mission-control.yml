@@ -80,6 +80,15 @@ jobs:
       - name: Install (see header for why scripts are skipped)
         run: npm ci --ignore-scripts
 
+      # Typecheck BEFORE the tests. electron-vite transpiles without checking
+      # types and vitest does the same, so a type error can pass a green build
+      # AND a green suite, then surface at runtime on someone's bench. Scoped to
+      # tsconfig.json (src/main + src/preload); electron.vite.config.ts carries a
+      # pre-existing error under tsconfig.node.json that is not this check's
+      # business.
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Run the suite
         run: npm test
 
