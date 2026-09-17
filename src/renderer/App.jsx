@@ -18,6 +18,7 @@ import { FONT, SPACE, RADIUS, TRACK, SCHEME_PROPS } from './design/tokens.js';
 import { TweaksPanel } from './design/TweaksPanel.jsx';
 import { Cap, Pill } from './design/components.jsx';
 import { Icon } from './design/icons.jsx';
+import TabErrorBoundary from './components/TabErrorBoundary.jsx';
 import { LiquidShader } from './design/instruments.jsx';
 
 import FlightTab from './tabs/FlightTabV2.jsx'; // v2-design Flight tab on live telemetry (was ./tabs/FlightTab.jsx)
@@ -131,13 +132,26 @@ function Shell({ tweaks, setTweak, telemetry, serial, command, diag, flightSim }
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
         <Sidebar activeTab={activeTab} onChange={setActiveTab} />
 
+        {/* One boundary around the tab content, keyed on the active tab.
+            A render crash in any tab costs you THAT tab and nothing else --
+            the link, the telemetry store and every other view keep running.
+            Before this existed, one undefined property in one card blanked
+            the entire app with no way back but a restart, which is a poor
+            thing to hand someone standing next to a rocket.
+
+            Keyed AND name-propped: the key forces a fresh boundary instance
+            per tab, and componentDidUpdate clears a latched error when the
+            name changes, so switching away and back retries rather than
+            showing a stale error screen. */}
         <main style={{ flex: 1, overflow: 'auto', position: 'relative', background: 'transparent' }}>
-          {activeTab === 'setup'    && <SetupTab serial={serial} flightSim={flightSim} tel={telemetry} />}
-          {activeTab === 'test'     && <TestTab tel={telemetry} diag={diag} cmd={command} />}
-          {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} flightSim={flightSim} tweaks={tweaks} />}
-          {activeTab === 'tracking' && <TrackTab tel={telemetry} serial={serial} />}
-          {activeTab === 'gps'      && <GpsTab />}
-          {activeTab === 'debrief'  && <DebriefTab serial={serial} />}
+          <TabErrorBoundary key={activeTab} name={activeTab.toUpperCase()} theme={T}>
+            {activeTab === 'setup'    && <SetupTab serial={serial} flightSim={flightSim} tel={telemetry} />}
+            {activeTab === 'test'     && <TestTab tel={telemetry} diag={diag} cmd={command} />}
+            {activeTab === 'flight'   && <FlightTab tel={telemetry} cmd={command} serial={serial} flightSim={flightSim} tweaks={tweaks} />}
+            {activeTab === 'tracking' && <TrackTab tel={telemetry} serial={serial} />}
+            {activeTab === 'gps'      && <GpsTab />}
+            {activeTab === 'debrief'  && <DebriefTab serial={serial} />}
+          </TabErrorBoundary>
         </main>
       </div>
 
