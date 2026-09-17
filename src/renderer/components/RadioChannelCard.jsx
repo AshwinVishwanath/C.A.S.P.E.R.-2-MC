@@ -18,7 +18,11 @@ import useChannel, { phaseLabel } from '../hooks/use_channel.jsx';
  * frequencies with nobody sure which.
  */
 export default function RadioChannelCard({ gsChannel, imageCalOk = true }) {
-  const { T } = useTheme();
+  // useTheme() returns the theme OBJECT, not a wrapper around it. Destructuring
+  // `{ T }` here silently produced undefined, and the first T.accent below threw
+  // -- which in React unmounts the whole tree, so the Setup tab rendered black
+  // with no way back. Every other tab does it this way; match them.
+  const T = useTheme();
   const { plan, defaultChannel, state, request, busy, supported } = useChannel();
   const [selected, setSelected] = useState(null);
 
