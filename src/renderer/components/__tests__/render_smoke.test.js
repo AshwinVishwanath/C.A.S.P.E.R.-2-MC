@@ -29,6 +29,8 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createElement as h } from 'react';
 import { renderToString } from 'react-dom/server';
 
@@ -240,5 +242,79 @@ describe('render smoke: the rest of the renderer components', () => {
   it('SensorDiagnostics', () => {
     stubBridge();
     expect(() => renderProbe(() => h(SensorDiagnostics))).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Theme tokens actually exist
+// ---------------------------------------------------------------------------
+
+/**
+ * An invented token name is SILENT. `T.panel` where the theme defines `bgPanel`
+ * evaluates to undefined, React drops the property, and the browser falls back
+ * to its own styling -- so the channel dropdown rendered as black-on-white in a
+ * dark UI and nothing anywhere reported a problem. Rendering cannot catch it
+ * (nothing throws) and neither can tsc (these are .jsx). It has to be asserted.
+ *
+ * Reads the token file as TEXT rather than importing buildTheme(), because the
+ * point is to compare the names components WRITE against the names the theme
+ * DEFINES -- a runtime object would not tell you which of the two is wrong.
+ */
+describe('theme tokens used by components are real', () => {
+  // process.cwd() is the project root under vitest. import.meta.url was tried
+  // first and resolved somewhere else under the transform, so every file read
+  // came back empty -- caught only by the greater-than-zero floor below, which
+  // is the same silent-skip failure this whole file exists to prevent.
+  const src = resolve(process.cwd(), 'src/renderer');
+
+  const defined = new Set(
+    [...readFileSync(resolve(src, 'design/tokens.js'), 'utf8').matchAll(/^\s{4}([a-zA-Z]+):/gm)]
+      .map((m) => m[1]),
+  );
+
+  // The \b matters: without it this also matches the trailing T of FONT.mono
+  // and FONT.sans, which are not theme tokens. The check would then fail on
+  // correct code and get "fixed" by loosening it, which is how a guard becomes
+  // decoration.
+  const TOKEN_RE = /\bT\.([a-zA-Z]+)/g;
+
+  it('scraped a plausible token list', () => {
+    expect(defined.size).toBeGreaterThan(15);
+    for (const k of ['bg', 'bgEl', 'bgPanel', 'border', 'strong', 'muted', 'accent', 'danger', 'warn']) {
+      expect(defined.has(k)).toBe(true);
+    }
+    // The two names that do NOT exist, and were the actual bug. If the theme
+    // ever grows one for real, remove it from here -- do not remove the check.
+    expect(defined.has('panel')).toBe(false);
+    expect(defined.has('line')).toBe(false);
+  });
+
+  for (const file of ['RadioChannelCard.jsx', 'TabErrorBoundary.jsx']) {
+    it(`${file} uses only tokens the theme defines`, () => {
+      const text = readFileSync(resolve(src, 'components', file), 'utf8');
+      const used = [...new Set([...text.matchAll(TOKEN_RE)].map((m) => m[1]))];
+      expect(used.length).toBeGreaterThan(0);
+      expect(used.filter((u) => !defined.has(u))).toEqual([]);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Band toggle
+// ---------------------------------------------------------------------------
+
+describe('render smoke: RadioChannelCard band toggle', () => {
+  it('renders both band options', () => {
+    stubBridge();
+    const html = withTheme(h(RadioChannelCard, { gsChannel: 10 }));
+    expect(html).toContain('EU 868');
+    expect(html).toContain('US 915');
+  });
+
+  it('warns before moving the link across bands', () => {
+    stubBridge();
+    // Live on an EU channel, so the EU view must NOT nag about antennas...
+    const eu = withTheme(h(RadioChannelCard, { gsChannel: 10 }));
+    expect(eu).not.toContain('stresses the amplifier');
   });
 });
